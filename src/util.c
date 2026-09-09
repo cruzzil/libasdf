@@ -11,8 +11,8 @@
 #include "util.h"
 
 
-void asdf_free(void *ptr) {
-    free(ptr);
+void asdf_free(void *buf) {
+    free(buf);
 }
 
 

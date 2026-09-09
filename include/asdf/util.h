@@ -47,9 +47,9 @@ ASDF_BEGIN_DECLS
  * destination buffer.  Other pointers returned by libasdf have their own
  * destructors and must not be passed here.
  *
- * :param ptr: The buffer to free; passing `NULL` is a no-op
+ * :param buf: The buffer to free; passing `NULL` is a no-op
  */
-ASDF_EXPORT void asdf_free(void *ptr);
+ASDF_EXPORT void asdf_free(void *buf);
 
 ASDF_END_DECLS
 
