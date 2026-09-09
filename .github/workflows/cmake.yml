@@ -148,6 +148,75 @@ jobs:
         fi
         cat "$logfile"
 
+  # An experiment, not a gate: find out what actually stands between libasdf
+  # and an MSVC build. It is deliberately arranged to get as far as it can and
+  # report everything in one run rather than stopping at the first failure, so
+  # every step after the dependency probe keeps going on error.
+  windows:
+    name: 'Windows (MSVC) -- exploratory'
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Which dependencies does vcpkg have?
+      shell: bash
+      continue-on-error: true
+      run: |
+        for p in zlib bzip2 lz4 libfyaml libmd libstatgrab argp-standalone; do
+          if vcpkg search "$p" 2>/dev/null | grep -qiE "^$p( |\\[)"; then
+            echo "AVAILABLE   $p"
+          else
+            echo "MISSING     $p"
+          fi
+        done
+
+    - name: Install what vcpkg has
+      shell: bash
+      continue-on-error: true
+      run: vcpkg install zlib bzip2 lz4 --triplet x64-windows
+
+    - name: Configure
+      shell: bash
+      continue-on-error: true
+      run: |
+        mkdir -p build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET=x64-windows \
+          -DUSE_STATGRAB=OFF \
+          -DENABLE_TESTING_ALL=YES 2>&1 | tee configure.log
+        echo "=== configure exit: ${PIPESTATUS[0]}"
+
+    - name: Build
+      shell: bash
+      continue-on-error: true
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} 2>&1 | tail -100
+
+    - name: Test
+      shell: bash
+      continue-on-error: true
+      run: cd build && ctest -C ${{ env.BUILD_TYPE }} --output-on-failure 2>&1 | tail -60
+
+    # Whatever happened above, say what the source itself relies on that MSVC
+    # does not have. This runs unconditionally and is the useful output when
+    # the configure step never gets far enough to produce any.
+    - name: What in the source is POSIX-only?
+      shell: bash
+      if: always()
+      run: |
+        echo "== POSIX headers included by src/ and include/"
+        grep -rhoE '#include <(sys/[a-z]+|unistd|strings|pthread|dirent|fcntl|glob|libgen|argp|err|endian|arpa/[a-z]+)\.h>' \
+          src include | sort | uniq -c | sort -rn
+        echo
+        echo "== POSIX functions and types named in src/"
+        grep -rhoE '\b(ssize_t|off_t|mode_t|pid_t|strerror_r|strndup|strdup|mmap|munmap|open|close|read|write|fsync|ftruncate|getline|asprintf|vasprintf|realpath|mkstemp|setenv|unsetenv|localtime_r|gmtime_r|timegm|nanosleep|clock_gettime|__attribute__)\b' \
+          src | sort | uniq -c | sort -rn | head -30
+
   # Test the documentation build if the build passes
   docs:
     name: 'Build documentation'
