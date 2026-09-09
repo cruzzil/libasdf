@@ -214,24 +214,20 @@ jobs:
 
     # Group what is left by cause, so the output is a porting list rather
     # than a wall of C1083s.
-    # Isolate STC: it is third-party and macro-heavy, so establish on its own
-    # terms whether MSVC can compile it and what flag it needs, rather than
-    # inferring from a full build.
-    - name: Can MSVC compile STC at all?
+    # Compile the actual failing translation unit directly, with and without
+    # the conforming preprocessor, rather than inferring from a full build
+    # whose flags CMake may or may not have passed through.
+    - name: Does src/yaml.c need /Zc:preprocessor?
       shell: cmd
       continue-on-error: true
       run: |
-        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        echo #define i_type IVec > stcprobe.c
-        echo #define i_key int >> stcprobe.c
-        echo #include "stc/vec.h" >> stcprobe.c
-        echo int main(void){ IVec v = IVec_init(); IVec_push(^&v, 1); IVec_drop(^&v); return 0; } >> stcprobe.c
+        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
+        set INC=/I src /I include /I build /I third_party\STC\include /I third_party\libfyaml\install\include /I C:\vcpkg\installed\x64-windows\include
         echo ==== default preprocessor:
-        cl /nologo /std:c11 /I third_party\STC\include /c stcprobe.c 2>&1 | findstr /C:"error" | more +0
-        echo ---- exit %errorlevel%
+        cl /nologo /std:c11 /experimental:c11atomics %INC% /c src\yaml.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
         echo ==== with /Zc:preprocessor:
-        cl /nologo /std:c11 /Zc:preprocessor /I third_party\STC\include /c stcprobe.c 2>&1 | findstr /C:"error" | more +0
-        echo ---- exit %errorlevel%
+        cl /nologo /std:c11 /experimental:c11atomics /Zc:preprocessor %INC% /c src\yaml.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== done
 
     - name: What flags did CMake actually record?
       shell: bash
