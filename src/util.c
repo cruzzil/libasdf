@@ -11,6 +11,11 @@
 #include "util.h"
 
 
+void asdf_free(void *buf) {
+    free(buf);
+}
+
+
 size_t asdf_util_get_total_memory(void) {
 #ifndef HAVE_STATGRAB
     return 0;
