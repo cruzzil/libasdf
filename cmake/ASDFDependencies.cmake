@@ -109,7 +109,13 @@ endif()
 
 option(USE_STATGRAB "Use libstatgrab for memory info" ON)
 option(STATGRAB_NO_PKGCONFIG "Detect libstatgrab without using pkg-config" NO)
-if(STATGRAB_NO_PKGCONFIG)
+if(NOT USE_STATGRAB)
+    # The option existed but nothing consulted it, so the REQUIRED probe
+    # below ran regardless and -DUSE_STATGRAB=OFF could not turn it off.
+    # The code already treats it as optional: `HAVE_STATGRAB` follows
+    # `STATGRAB_FOUND`, which stays unset here.
+    set(STATGRAB_LIBRARIES "")
+elseif(STATGRAB_NO_PKGCONFIG)
     set(STATGRAB_LIBRARIES "statgrab")
     set(STATGRAB_LIBDIR "" CACHE STRING "Directory containing libstatgrab library")
     set(STATGRAB_INCLUDEDIR "" CACHE STRING "Directory containing libstatgrab headers")
