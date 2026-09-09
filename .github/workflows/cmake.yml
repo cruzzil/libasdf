@@ -208,7 +208,7 @@ jobs:
           -DFYAML_NO_PKGCONFIG=YES \
           -DFYAML_INCLUDEDIR="$FY/include" \
           -DFYAML_LIBDIR="$FY/lib" \
-          -DCMAKE_C_FLAGS="/experimental:c11atomics /std:c11" \
+          -DCMAKE_C_FLAGS="/experimental:c11atomics /std:c11 /Zc:preprocessor" \
           -DENABLE_TESTING_ALL=YES 2>&1 | tail -40
         echo "=== configure exit: ${PIPESTATUS[0]}"
 
