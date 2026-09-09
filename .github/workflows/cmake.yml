@@ -148,10 +148,9 @@ jobs:
         fi
         cat "$logfile"
 
-  # An experiment, not a gate: find out what actually stands between libasdf
-  # and an MSVC build. It is deliberately arranged to get as far as it can and
-  # report everything in one run rather than stopping at the first failure, so
-  # every step after the dependency probe keeps going on error.
+  # An experiment, not a gate, and not for upstream: find out what actually
+  # stands between libasdf and an MSVC build. Everything continues on error so
+  # one run reports the whole list rather than stopping at the first failure.
   windows:
     name: 'Windows (MSVC) -- exploratory'
     runs-on: windows-latest
@@ -162,60 +161,73 @@ jobs:
       with:
         submodules: true
 
-    - name: Which dependencies does vcpkg have?
+    # zlib, bzip2 and lz4 are all in vcpkg and install cleanly; they ship
+    # `.pc` files, so with pkg-config present the existing detection works
+    # unchanged. libfyaml, libmd, libstatgrab and argp are not in vcpkg.
+    - name: Dependencies vcpkg can supply
       shell: bash
       continue-on-error: true
       run: |
-        for p in zlib bzip2 lz4 libfyaml libmd libstatgrab argp-standalone; do
-          if vcpkg search "$p" 2>/dev/null | grep -qiE "^$p( |\\[)"; then
-            echo "AVAILABLE   $p"
-          else
-            echo "MISSING     $p"
-          fi
-        done
+        vcpkg install zlib bzip2 lz4 --triplet x64-windows
+        choco install -y --no-progress pkgconfiglite
 
-    - name: Install what vcpkg has
+    # The decisive question: libfyaml is the YAML engine, and `src/util.h`
+    # and `src/file.h` include it, so nothing compiles without it. Find out
+    # whether it builds on Windows at all.
+    - name: Can libfyaml build on Windows?
       shell: bash
       continue-on-error: true
-      run: vcpkg install zlib bzip2 lz4 --triplet x64-windows
+      run: |
+        git clone --depth 1 https://github.com/pantoniou/libfyaml.git /tmp/libfyaml
+        echo "=== build files it ships:"
+        ls /tmp/libfyaml | grep -iE "cmake|meson|configure|autogen|Makefile" || echo "(autotools only)"
+        echo "=== does anything mention Windows/MSVC?"
+        grep -rilE "msvc|_WIN32|mingw" /tmp/libfyaml/src /tmp/libfyaml/include 2>/dev/null | head
 
     - name: Configure
       shell: bash
       continue-on-error: true
       run: |
         mkdir -p build && cd build
+        PKG_CONFIG_PATH="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/pkgconfig" \
         cmake .. \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
           -DVCPKG_TARGET_TRIPLET=x64-windows \
           -DUSE_STATGRAB=OFF \
-          -DENABLE_TESTING_ALL=YES 2>&1 | tee configure.log
+          -DCMAKE_C_FLAGS="/experimental:c11atomics /std:c11" \
+          -DENABLE_TESTING_ALL=YES 2>&1 | tail -60
         echo "=== configure exit: ${PIPESTATUS[0]}"
 
-    - name: Build
+    # Group what is left by cause, so the output is a porting list rather
+    # than a wall of C1083s.
+    - name: Build, and classify what fails
       shell: bash
       continue-on-error: true
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} 2>&1 | tail -100
+      run: |
+        cmake --build build --config ${{ env.BUILD_TYPE }} 2>&1 | tee build.log | tail -30
+        echo
+        echo "================ missing headers, by header ================"
+        grep -oE "Cannot open include file: '[^']+'" build.log | sort | uniq -c | sort -rn
+        echo
+        echo "================ other distinct errors ================"
+        grep -oE "error C[0-9]+: .*" build.log | grep -v "Cannot open include file" | sort -u | head -20
 
-    - name: Test
-      shell: bash
-      continue-on-error: true
-      run: cd build && ctest -C ${{ env.BUILD_TYPE }} --output-on-failure 2>&1 | tail -60
-
-    # Whatever happened above, say what the source itself relies on that MSVC
-    # does not have. This runs unconditionally and is the useful output when
-    # the configure step never gets far enough to produce any.
     - name: What in the source is POSIX-only?
       shell: bash
       if: always()
       run: |
-        echo "== POSIX headers included by src/ and include/"
-        grep -rhoE '#include <(sys/[a-z]+|unistd|strings|pthread|dirent|fcntl|glob|libgen|argp|err|endian|arpa/[a-z]+)\.h>' \
-          src include | sort | uniq -c | sort -rn
+        echo "== POSIX headers, and which files include them"
+        for h in sys/mman.h unistd.h pthread.h sys/eventfd.h sys/syscall.h \
+                 sys/poll.h sys/ioctl.h endian.h argp.h sys/time.h; do
+          printf "%-18s " "$h"
+          grep -rl "#include <$h>" src include 2>/dev/null | tr '\n' ' '
+          echo
+        done
         echo
         echo "== POSIX functions and types named in src/"
-        grep -rhoE '\b(ssize_t|off_t|mode_t|pid_t|strerror_r|strndup|strdup|mmap|munmap|open|close|read|write|fsync|ftruncate|getline|asprintf|vasprintf|realpath|mkstemp|setenv|unsetenv|localtime_r|gmtime_r|timegm|nanosleep|clock_gettime|__attribute__)\b' \
-          src | sort | uniq -c | sort -rn | head -30
+        grep -rhoE '\b(ssize_t|off_t|strerror_r|strndup|mmap|munmap|ftruncate|getline|asprintf|realpath|mkstemp|localtime_r|gmtime_r|timegm|strptime|nanosleep|clock_gettime)\b' \
+          src | sort | uniq -c | sort -rn
 
   # Test the documentation build if the build passes
   docs:
