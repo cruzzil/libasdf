@@ -161,9 +161,9 @@ jobs:
       with:
         submodules: true
 
-    # zlib, bzip2 and lz4 are all in vcpkg and install cleanly; they ship
-    # `.pc` files, so with pkg-config present the existing detection works
-    # unchanged. libfyaml, libmd, libstatgrab and argp are not in vcpkg.
+    # zlib, bzip2 and lz4 are all in vcpkg and install cleanly, and they ship
+    # `.pc` files, so with pkg-config present the existing detection finds
+    # them unchanged. libmd, libstatgrab and argp are not in vcpkg.
     - name: Dependencies vcpkg can supply
       shell: bash
       continue-on-error: true
@@ -171,23 +171,33 @@ jobs:
         vcpkg install zlib bzip2 lz4 --triplet x64-windows
         choco install -y --no-progress pkgconfiglite
 
-    # The decisive question: libfyaml is the YAML engine, and `src/util.h`
-    # and `src/file.h` include it, so nothing compiles without it. Find out
-    # whether it builds on Windows at all.
-    - name: Can libfyaml build on Windows?
+    # libfyaml is the one dependency with no Windows package anywhere, and
+    # `src/util.h` includes `libfyaml.h`, so nothing compiles without it.
+    # It does support MSVC natively, though -- see its own
+    # `doc/windows-support.txt` -- so vendor it and build it here.
+    - name: Vendor and build libfyaml
       shell: bash
       continue-on-error: true
       run: |
-        git clone --depth 1 https://github.com/pantoniou/libfyaml.git /tmp/libfyaml
-        echo "=== build files it ships:"
-        ls /tmp/libfyaml | grep -iE "cmake|meson|configure|autogen|Makefile" || echo "(autotools only)"
-        echo "=== does anything mention Windows/MSVC?"
-        grep -rilE "msvc|_WIN32|mingw" /tmp/libfyaml/src /tmp/libfyaml/include 2>/dev/null | head
+        git clone --depth 1 https://github.com/pantoniou/libfyaml.git third_party/libfyaml
+        cmake -S third_party/libfyaml -B third_party/libfyaml/build \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_INSTALL_PREFIX="$PWD/third_party/libfyaml/install" \
+          -DBUILD_SHARED_LIBS=OFF 2>&1 | tail -25
+        echo "=== libfyaml configure exit: ${PIPESTATUS[0]}"
+        cmake --build third_party/libfyaml/build --config ${{ env.BUILD_TYPE }} 2>&1 | tee fyaml.log | tail -25
+        echo "=== libfyaml build exit: ${PIPESTATUS[0]}"
+        cmake --install third_party/libfyaml/build --config ${{ env.BUILD_TYPE }} 2>&1 | tail -5 || true
+        echo "=== what got installed:"
+        find third_party/libfyaml/install -name '*.h' -o -name '*.lib' -o -name '*.pc' | head -20
+        echo "=== distinct libfyaml errors, if any:"
+        grep -oE "error C[0-9]+: .*" fyaml.log | sort -u | head -20 || echo "(none)"
 
-    - name: Configure
+    - name: Configure libasdf against the vendored libfyaml
       shell: bash
       continue-on-error: true
       run: |
+        FY="$PWD/third_party/libfyaml/install"
         mkdir -p build && cd build
         PKG_CONFIG_PATH="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/pkgconfig" \
         cmake .. \
@@ -195,8 +205,11 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
           -DVCPKG_TARGET_TRIPLET=x64-windows \
           -DUSE_STATGRAB=OFF \
+          -DFYAML_NO_PKGCONFIG=YES \
+          -DFYAML_INCLUDEDIR="$FY/include" \
+          -DFYAML_LIBDIR="$FY/lib" \
           -DCMAKE_C_FLAGS="/experimental:c11atomics /std:c11" \
-          -DENABLE_TESTING_ALL=YES 2>&1 | tail -60
+          -DENABLE_TESTING_ALL=YES 2>&1 | tail -40
         echo "=== configure exit: ${PIPESTATUS[0]}"
 
     # Group what is left by cause, so the output is a porting list rather
@@ -205,13 +218,18 @@ jobs:
       shell: bash
       continue-on-error: true
       run: |
-        cmake --build build --config ${{ env.BUILD_TYPE }} 2>&1 | tee build.log | tail -30
+        cmake --build build --config ${{ env.BUILD_TYPE }} 2>&1 | tee build.log | tail -20
         echo
         echo "================ missing headers, by header ================"
-        grep -oE "Cannot open include file: '[^']+'" build.log | sort | uniq -c | sort -rn
+        grep -oE "Cannot open include file: '[^']+'" build.log | sort | uniq -c | sort -rn || echo "(none)"
         echo
         echo "================ other distinct errors ================"
-        grep -oE "error C[0-9]+: .*" build.log | grep -v "Cannot open include file" | sort -u | head -20
+        grep -oE "error C[0-9]+: .*" build.log | grep -v "Cannot open include file" | sort -u | head -25 || echo "(none)"
+
+    - name: Test
+      shell: bash
+      continue-on-error: true
+      run: cd build && ctest -C ${{ env.BUILD_TYPE }} --output-on-failure 2>&1 | tail -40
 
     - name: What in the source is POSIX-only?
       shell: bash
