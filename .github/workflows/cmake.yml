@@ -214,6 +214,33 @@ jobs:
 
     # Group what is left by cause, so the output is a porting list rather
     # than a wall of C1083s.
+    # Isolate STC: it is third-party and macro-heavy, so establish on its own
+    # terms whether MSVC can compile it and what flag it needs, rather than
+    # inferring from a full build.
+    - name: Can MSVC compile STC at all?
+      shell: cmd
+      continue-on-error: true
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        echo #define i_type IVec > stcprobe.c
+        echo #define i_key int >> stcprobe.c
+        echo #include "stc/vec.h" >> stcprobe.c
+        echo int main(void){ IVec v = IVec_init(); IVec_push(^&v, 1); IVec_drop(^&v); return 0; } >> stcprobe.c
+        echo ==== default preprocessor:
+        cl /nologo /std:c11 /I third_party\STC\include /c stcprobe.c 2>&1 | findstr /C:"error" | more +0
+        echo ---- exit %errorlevel%
+        echo ==== with /Zc:preprocessor:
+        cl /nologo /std:c11 /Zc:preprocessor /I third_party\STC\include /c stcprobe.c 2>&1 | findstr /C:"error" | more +0
+        echo ---- exit %errorlevel%
+
+    - name: What flags did CMake actually record?
+      shell: bash
+      continue-on-error: true
+      run: |
+        grep -hE "^CMAKE_C_FLAGS(_RELWITHDEBINFO)?:" build/CMakeCache.txt || true
+        echo "--- AdditionalOptions in the generated project:"
+        grep -ohE "<AdditionalOptions>[^<]*" build/src/libasdf_objs.vcxproj | sort -u | head -5
+
     - name: Build, and classify what fails
       shell: bash
       continue-on-error: true
