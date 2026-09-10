@@ -17,11 +17,16 @@ done
 echo "" >> "$OUT"
 echo "int main() {" >> "$OUT"
 
-# Loop through all .h files and extract ASDF_EXPORT symbols
+# Loop through all .h files and extract ASDF_EXPORT symbols.
+#
+# Deduplicated: a symbol may legitimately be declared more than once -- the
+# asdf_open_*_ex family is forward-declared near the top of file.h for the
+# static inline wrappers and declared again in place -- and emitting the same
+# dummy twice is a redeclaration error.
 for header in "$@"; do
     grep '^ASDF_EXPORT.*(' "$header" | \
-    sed -E 's/ASDF_EXPORT[[:space:]]+[^()]*[[:space:]]+\*?([a-zA-Z_][a-zA-Z0-9_]*)\(.*/    volatile void *dummy_\1 = (void *)\1;/' >> "$OUT"
-done
+    sed -E 's/ASDF_EXPORT[[:space:]]+[^()]*[[:space:]]+\*?([a-zA-Z_][a-zA-Z0-9_]*)\(.*/    volatile void *dummy_\1 = (void *)\1;/'
+done | sort -u >> "$OUT"
 
 echo "    return 0;" >> "$OUT"
 echo "}" >> "$OUT"
