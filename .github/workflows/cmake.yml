@@ -254,6 +254,23 @@ jobs:
         cl /nologo /std:c11 /c offprobe3.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
         echo ==== done
 
+    # munit guards its array-parameter syntax on __STDC_VERSION__ >= C99.
+    # MSVC in /std:c11 sets that macro but still has no VLAs, so the guard
+    # picks a form it cannot compile. Check whether dropping /std:c11 is all
+    # it wants.
+    - name: Does munit need /std:c11 dropped?
+      shell: cmd
+      continue-on-error: true
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
+        echo ==== munit with /std:c11 (what this job has been doing):
+        cl /nologo /std:c11 /I tests\munit /c tests\munit\munit.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== munit with MSVC's default C mode:
+        cl /nologo /I tests\munit /c tests\munit\munit.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== munit with /std:clatest:
+        cl /nologo /std:clatest /I tests\munit /c tests\munit\munit.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== done
+
     - name: What flags did CMake actually record?
       shell: bash
       continue-on-error: true
