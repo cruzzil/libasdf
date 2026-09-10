@@ -89,6 +89,11 @@ static inline int asdf_write_fd(int fd, const void *buf, size_t n) {
     return _write(fd, buf, (unsigned int)n);
 }
 
+/* The CRT spells it _MAX_PATH, in <stdlib.h>. */
+#if !defined(PATH_MAX)
+#define PATH_MAX _MAX_PATH
+#endif
+
 /* MSVC has no mkstemp; _mktemp_s rewrites the template in place. */
 static inline int asdf_mkstemp(char *template_) {
     if (_mktemp_s(template_, strlen(template_) + 1) != 0)
