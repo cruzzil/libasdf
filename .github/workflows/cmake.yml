@@ -280,6 +280,46 @@ jobs:
         echo "================ last 40 lines ================"
         tail -40 build.log
 
+    # Linking is not working. Compile a real program against the headers and
+    # the import library, run it, and check it round-trips a file.
+    - name: Smoke test the DLL
+      shell: cmd
+      continue-on-error: true
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
+        (
+          echo #include ^<asdf.h^>
+          echo #include ^<stdio.h^>
+          echo #include ^<string.h^>
+          echo int main(void^) {
+          echo     asdf_file_t *f = asdf_open("smoke.asdf", "w"^);
+          echo     if (!f^) { puts("open-w failed"^); return 1; }
+          echo     asdf_set_string0(f, "name", "Dennis Ritchie"^);
+          echo     asdf_set_int64(f, "answer", 42^);
+          echo     if (asdf_write_to(f, "smoke.asdf"^) != 0^) { puts("write failed"^); return 1; }
+          echo     asdf_close(f^);
+          echo     asdf_file_t *g = asdf_open("smoke.asdf"^);
+          echo     if (!g^) { puts("open-r failed"^); return 1; }
+          echo     const char *name = NULL;
+          echo     int64_t answer = 0;
+          echo     if (asdf_get_string0(g, "name", ^&name^) != ASDF_VALUE_OK^) { puts("get name failed"^); return 1; }
+          echo     if (asdf_get_int64(g, "answer", ^&answer^) != ASDF_VALUE_OK^) { puts("get answer failed"^); return 1; }
+          echo     printf("name=%%s answer=%%lld\n", name, (long long^)answer^);
+          echo     if (strcmp(name, "Dennis Ritchie"^) != 0 ^|^| answer != 42^) { puts("MISMATCH"^); return 1; }
+          echo     asdf_close(g^);
+          echo     puts("SMOKE OK"^);
+          echo     return 0;
+          echo }
+        ) > smoke.c
+        cl /nologo /std:c11 /experimental:c11atomics ^
+           /I include /I build\include ^
+           /I third_party\libfyaml\install\include ^
+           smoke.c /Fe:smoke.exe /link build\src\RelWithDebInfo\asdf.lib
+        if errorlevel 1 ( echo COMPILE/LINK FAILED & exit /b 0 )
+        copy build\src\RelWithDebInfo\asdf.dll . >nul
+        smoke.exe
+        echo ---- smoke exit %errorlevel%
+
     - name: Did the library actually come out?
       shell: bash
       continue-on-error: true
