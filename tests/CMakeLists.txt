@@ -37,12 +37,16 @@ if(ASDF_HAVE_EXECINFO)
     add_compile_definitions(ASDF_HAVE_EXECINFO)
 endif()
 
-if(MSVC)
-    # The test sources include libasdf's internal headers, which reach
-    # <stdatomic.h>; MSVC gates that behind /experimental:c11atomics, which
-    # needs /std:c11. munit is exempted just below.
-    add_compile_options(/std:c11 /experimental:c11atomics)
-endif()
+# The test sources include libasdf's internal headers, which reach
+# <stdatomic.h>; MSVC gates that behind /experimental:c11atomics, which needs
+# /std:c11. Applied per target rather than with add_compile_options, because
+# that is directory-wide and would also hit munit -- whose whole problem is
+# that /std:c11 makes it select a VLA form MSVC cannot compile.
+function(asdf_test_msvc_flags target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /std:c11 /experimental:c11atomics)
+    endif()
+endfunction()
 
 add_library(munit ${MUNIT_DIR}/munit.c)
 
@@ -69,6 +73,7 @@ set(FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 set(TEMP_DIR "${CMAKE_CURRENT_BINARY_DIR}/tmp")
 
 add_library(util util.c)
+asdf_test_msvc_flags(util)
 target_include_directories(util PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${STATGRAB_INCLUDEDIR}
@@ -80,6 +85,7 @@ add_compile_definitions(TEMP_DIR=\"${TEMP_DIR}\")
 # Helper used by the shell tests to discover the run directory chosen by
 # util.c's constructor
 add_executable(run-dir run-dir.c)
+asdf_test_msvc_flags(run-dir)
 target_include_directories(run-dir PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_SOURCE_DIR}/include
@@ -125,6 +131,7 @@ set(ASDFSTD_DIR PARENT_SCOPE)
 foreach(source_file ${source_files})
     string(REGEX REPLACE ${ext_pattern} "" test_executable ${source_file})
     add_executable(${test_executable} ${source_file})
+    asdf_test_msvc_flags(${test_executable})
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
         target_compile_options(${test_executable} PRIVATE ${nix_cflags} ${nix_gnu_cflags})
         # Make __FILE__ names relative to source root
@@ -320,6 +327,7 @@ if(ENABLE_TESTING_DOCS)
         set(source_file ${DOC_EXAMPLES_DIR}/${doctest}.c)
         set(exe_file ${DOC_EXAMPLES_DIR}/${doctest})
         add_executable(${doctest} ${source_file})
+        asdf_test_msvc_flags(${doctest})
         target_include_directories(${doctest} PRIVATE ${CMAKE_SOURCE_DIR}/include)
         target_link_libraries(${doctest} PRIVATE libasdf)
         add_dependencies(${doctest} extract-doc-examples)
