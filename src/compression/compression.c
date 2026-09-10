@@ -11,12 +11,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
+
+#include "../compat/posix.h"
 
 #ifdef HAVE_USERFAULTFD
 #include <fcntl.h>
@@ -73,7 +73,7 @@ static int asdf_create_temp_file(size_t data_size, const char *tmp_dir, int *out
 
     snprintf(path, sizeof(path), "%s/libasdf-block-XXXXXX", tmp_dir);
 
-    fd = mkstemp(path);
+    fd = asdf_mkstemp(path);
 
     if (fd < 0)
         return -1;
@@ -82,12 +82,12 @@ static int asdf_create_temp_file(size_t data_size, const char *tmp_dir, int *out
     unlink(path);
 
     if (data_size > ASDF_OFF_MAX) {
-        close(fd);
+        asdf_close_fd(fd);
         return -1;
     }
 
     if (ftruncate(fd, (off_t)data_size) != 0) {
-        close(fd);
+        asdf_close_fd(fd);
         return -1;
     }
 
@@ -498,7 +498,7 @@ finish:
         munmap(map, page_size);
 
     if (fd >= 0)
-        close(fd);
+        asdf_close_fd(fd);
 
     if (uffd >= 0)
         close(uffd);
@@ -676,7 +676,7 @@ void asdf_block_comp_close(asdf_block_t *block) {
         munmap(state->dest, state->dest_size);
 
     if (state->own_fd > 0)
-        close(state->fd);
+        asdf_close_fd(state->fd);
 
     ZERO_MEMORY(state, sizeof(asdf_block_comp_state_t));
     free(state);
@@ -786,7 +786,7 @@ static asdf_block_comp_state_t *asdf_block_comp_state_create(
         state->dest = mmap(NULL, dest_size, PROT_READ | PROT_WRITE, MAP_SHARED, state->fd, 0);
 
         if (state->dest == MAP_FAILED) {
-            close(state->fd);
+            asdf_close_fd(state->fd);
             free(state);
             return NULL;
         }

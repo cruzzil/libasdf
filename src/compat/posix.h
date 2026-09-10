@@ -15,14 +15,35 @@
 
 #if !defined(_WIN32)
 
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
+static inline int asdf_close_fd(int fd) {
+    return close(fd);
+}
+
+static inline int asdf_read_fd(int fd, void *buf, size_t n) {
+    return (int)read(fd, buf, n);
+}
+
+static inline int asdf_write_fd(int fd, const void *buf, size_t n) {
+    return (int)write(fd, buf, n);
+}
+
+static inline int asdf_mkstemp(char *template_) {
+    return mkstemp(template_);
+}
+
 #else /* _WIN32 */
 
+#include <fcntl.h>
 #include <io.h>
+#include <share.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -48,6 +69,48 @@ typedef int64_t ssize_t;
  * instead, which is a source change rather than a shim.
  */
 #define lseek(fd, off, whence) _lseeki64((fd), (off), (whence))
+
+/*
+ * Named descriptor helpers.
+ *
+ * `close`, `read` and `write` cannot be macros here -- `asdf_stream` has
+ * members of those names and any macro fires on `stream->close(stream)` --
+ * so the handful of genuine descriptor call sites use these instead.
+ */
+static inline int asdf_close_fd(int fd) {
+    return _close(fd);
+}
+
+static inline int asdf_read_fd(int fd, void *buf, size_t n) {
+    return _read(fd, buf, (unsigned int)n);
+}
+
+static inline int asdf_write_fd(int fd, const void *buf, size_t n) {
+    return _write(fd, buf, (unsigned int)n);
+}
+
+/* MSVC has no mkstemp; _mktemp_s rewrites the template in place. */
+static inline int asdf_mkstemp(char *template_) {
+    if (_mktemp_s(template_, strlen(template_) + 1) != 0)
+        return -1;
+
+    int fd = -1;
+
+    /*
+     * _O_TEMPORARY makes the file vanish when the last descriptor closes,
+     * which is what the POSIX code achieves by unlink()ing immediately.
+     */
+    if (_sopen_s(
+            &fd,
+            template_,
+            _O_CREAT | _O_EXCL | _O_RDWR | _O_BINARY | _O_TEMPORARY,
+            _SH_DENYNO,
+            _S_IREAD | _S_IWRITE) != 0)
+        return -1;
+
+    return fd;
+}
+
 #define access(path, mode) _access((path), (mode))
 #define unlink(path) _unlink(path)
 #define ftruncate(fd, len) _chsize_s((fd), (len))
