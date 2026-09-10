@@ -37,7 +37,10 @@ static inline int asdf_test_group_alive(int group) {
 #else /* _WIN32 */
 
 #include <direct.h>
+#include <fcntl.h>
 #include <io.h>
+#include <share.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <stdlib.h>
@@ -191,6 +194,51 @@ static inline ssize_t readlink(const char *path, char *buf, size_t len) {
     (void)buf;
     (void)len;
     return -1;
+}
+
+/*
+ * fmemopen, on a temp file.
+ *
+ * Win32 has no memory-backed FILE. The tests only ever read, so write the
+ * buffer out and hand back a read handle; _O_TEMPORARY makes it vanish when
+ * the last descriptor closes, so fclose still cleans up.
+ */
+static inline FILE *fmemopen(void *buf, size_t size, const char *mode) {
+    (void)mode;
+
+    char path[MAX_PATH];
+    char dir[MAX_PATH];
+
+    if (!GetTempPathA(sizeof(dir), dir))
+        return NULL;
+
+    if (!GetTempFileNameA(dir, "asdf", 0, path))
+        return NULL;
+
+    int fd = -1;
+
+    if (_sopen_s(
+            &fd,
+            path,
+            _O_CREAT | _O_RDWR | _O_BINARY | _O_TEMPORARY,
+            _SH_DENYNO,
+            _S_IREAD | _S_IWRITE) != 0)
+        return NULL;
+
+    FILE *fp = _fdopen(fd, "w+b");
+
+    if (!fp) {
+        _close(fd);
+        return NULL;
+    }
+
+    if (size && fwrite(buf, 1, size, fp) != size) {
+        fclose(fp);
+        return NULL;
+    }
+
+    rewind(fp);
+    return fp;
 }
 
 static inline void usleep(unsigned int microseconds) {

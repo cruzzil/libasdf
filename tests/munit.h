@@ -35,7 +35,12 @@
 #if defined(__GNUC__) || defined(__clang__)
 #define UNUSED(x) x __attribute__((unused))
 #else
-#define UNUSED(x) (void)(x)
+/*
+ * `x` is a whole parameter declaration, so the expansion has to stay one --
+ * `(void)(x)` is a syntax error in a parameter list, which is where MU_TEST
+ * uses it. The cost of the plain declaration is C4100, not an error.
+ */
+#define UNUSED(x) x
 #endif
 
 
