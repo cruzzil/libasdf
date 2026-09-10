@@ -65,7 +65,7 @@ static void ensure_tmp_dir(void) {
     struct stat st;
 
     if (stat(TEMP_DIR, &st) == -1)
-        asdf_test_mkdir(TEMP_DIR);
+        mkdir(TEMP_DIR, 0777);
 }
 
 
@@ -267,7 +267,7 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
                          TEMP_DIR "/" TEST_SERIAL_FMT, run_num);
         if (n < 0 || n >= (int)sizeof(run_dir_storage))
             break;
-        if (asdf_test_mkdir(run_dir_storage) == 0) {
+        if (mkdir(run_dir_storage, 0777) == 0) {
             /* Use a larger buffer to avoid format-truncation: run_num is
              * bounded by TEST_SERIAL_MAX (1000000) so the output is always
              * TEST_SERIAL_LEN digits, but GCC sees the full int range. */

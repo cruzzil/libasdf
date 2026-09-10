@@ -31,13 +31,13 @@ static inline int asdf_test_group_alive(int group) {
     return !(kill(-(pid_t)group, 0) == -1 && errno == ESRCH);
 }
 
-#define asdf_test_mkdir(path) mkdir((path), 0777)
 #define asdf_test_symlink(target, link) symlink((target), (link))
 
 #else /* _WIN32 */
 
 #include <direct.h>
 #include <io.h>
+#include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -151,7 +151,32 @@ static inline int asdf_test_group_alive(int group) {
     return alive;
 }
 
-#define asdf_test_mkdir(path) _mkdir(path)
+/* MSVC has neither, under any include. */
+#if !defined(_SSIZE_T_DEFINED)
+#define _SSIZE_T_DEFINED
+typedef long long ssize_t;
+#endif
+
+#if !defined(F_OK)
+#define F_OK 0
+#define X_OK 0 /* Win32 has no execute bit; existence is the closest thing. */
+#define W_OK 2
+#define R_OK 4
+#endif
+
+/* Large-file stdio, which the CRT spells with an i64 suffix. */
+#define fseeko(fp, off, whence) _fseeki64((fp), (off), (whence))
+#define ftello(fp) _ftelli64(fp)
+
+#define access(path, mode) _access((path), (mode))
+
+/*
+ * `mkdir` takes no mode on Win32. A macro rather than a renamed helper at every
+ * site, because the mode argument appears in call sites that are otherwise
+ * portable.
+ */
+#define mkdir(path, mode) _mkdir(path)
+
 /*
  * Symlinks need a privilege the runner does not grant by default, and the
  * caller treats this as best-effort, so report failure rather than pretend.
