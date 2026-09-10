@@ -380,7 +380,9 @@ jobs:
     - name: What in the source is POSIX-only?
       shell: bash
       if: always()
+      continue-on-error: true
       run: |
+        set +e
         echo "== POSIX headers, and which files include them"
         for h in sys/mman.h unistd.h pthread.h sys/eventfd.h sys/syscall.h \
                  sys/poll.h sys/ioctl.h endian.h argp.h sys/time.h; do
