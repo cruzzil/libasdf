@@ -18,7 +18,9 @@ set_property(TARGET stc PROPERTY POSITION_INDEPENDENT_CODE 1)
 # This is set similarly in `third_party/Makefile.am` by appending
 # -fvisibility=hidden explicitly to the CFLAGS for libstc.
 set_property(TARGET stc PROPERTY C_VISIBILITY_PRESET hidden)
-target_link_libraries(stc PUBLIC m)
+# The MSVC CRT carries the math functions; there is no separate libm, and
+# asking for one fails with LNK1104: cannot open file 'm.lib'.
+target_link_libraries(stc PUBLIC $<$<NOT:$<BOOL:${WIN32}>>:m>)
 target_include_directories(stc PRIVATE
         STC/include
 )
