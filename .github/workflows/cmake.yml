@@ -193,6 +193,10 @@ jobs:
         echo "=== distinct libfyaml errors, if any:"
         grep -oE "error C[0-9]+: .*" fyaml.log | sort -u | head -20 || echo "(none)"
 
+    # Tool and tests are off, and both for third-party reasons rather than
+    # anything in libasdf: the CLI wants argp, which Windows has no port of,
+    # and the munit test framework is built on VLAs, which MSVC does not
+    # implement at any /std: level. The library is what this proves.
     - name: Configure libasdf against the vendored libfyaml
       shell: bash
       continue-on-error: true
@@ -205,11 +209,12 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
           -DVCPKG_TARGET_TRIPLET=x64-windows \
           -DUSE_STATGRAB=OFF \
+          -DENABLE_TOOL=OFF \
           -DFYAML_NO_PKGCONFIG=YES \
           -DFYAML_INCLUDEDIR="$FY/include" \
           -DFYAML_LIBDIR="$FY/lib" \
           -DCMAKE_C_FLAGS="/experimental:c11atomics /std:c11 /Zc:preprocessor" \
-          -DENABLE_TESTING_ALL=YES 2>&1 | tail -40
+          -DENABLE_TESTING_ALL=NO 2>&1 | tail -40
         echo "=== configure exit: ${PIPESTATUS[0]}"
 
     # Group what is left by cause, so the output is a porting list rather
@@ -275,10 +280,13 @@ jobs:
         echo "================ last 40 lines ================"
         tail -40 build.log
 
-    - name: Test
+    - name: Did the library actually come out?
       shell: bash
       continue-on-error: true
-      run: cd build && ctest -C ${{ env.BUILD_TYPE }} --output-on-failure 2>&1 | tail -40
+      run: |
+        find build -name 'asdf*.lib' -o -name 'asdf*.dll' | sort
+        echo "--- errors in libasdf's own sources:"
+        grep -cE "libasdf.src.[A-Za-z0-9_/\\\\.]+[.](c|h)\([0-9]+,[0-9]+\): error" build.log || echo 0
 
     - name: What in the source is POSIX-only?
       shell: bash
