@@ -164,22 +164,6 @@ static const int SECONDS_PER_HOUR = 3600;
 static const int SECONDS_PER_MINUTE = 60;
 
 
-#ifdef HAVE_STRPTIME
-static const char *ASDF_TIME_SFMT_ISO[] = {"%Y-%m-%d %H:%M:%S", "%Y-%m-%d"};
-static const char *ASDF_TIME_SFMT_YDAY[] = {"%Y:%j:%H:%M:%S", "%Y:%j"};
-static const char *ASDF_TIME_SFMT_UNIX[] = {"%s"};
-
-#define check_format_strptime(TYPE, BUF, TM, HAS_TIME, STATUS) \
-    { \
-        size_t idx = 0; \
-        do { \
-            (STATUS) = strptime((BUF), (TYPE)[idx], (TM)); \
-            if ((STATUS)) { \
-                (HAS_TIME) = true; \
-                break; \
-            } \
-        } while (idx++ && idx < ARRAY_SIZE(TYPE)); \
-    }
 
 /* Julian Date to Gregorian calendar conversion */
 static void julian_to_tm(const double jd, struct tm *t, time_t *nanoseconds) {
@@ -244,89 +228,6 @@ static double julian_epoch_to_jd(const double j) {
 }
 
 
-static int asdf_time_parse_std(asdf_time_t *time) {
-    if (UNLIKELY(!time))
-        return -1;
-
-    struct tm tm = {0};
-    char tz_sign = 0;
-    int tz_hour = 0;
-    int tz_min = 0;
-    long nsec = 0;
-    bool has_time = false;
-    char *rest = NULL;
-    char *buf = strdup(time->value);
-    int ret = -1;
-
-    if (!buf) {
-        ASDF_ERROR_OOM(NULL);
-        goto cleanup;
-    }
-
-    /* Normalize separators (replace 'T' or 't' with space) */
-    for (char *c = buf; *c; ++c) {
-        if (*c == 'T' || *c == 't')
-            *c = ' ';
-    }
-
-    switch (time->format) {
-    case ASDF_TIME_FORMAT_DATETIME:
-    case ASDF_TIME_FORMAT_ISO:
-    case ASDF_TIME_FORMAT_ISOT:
-    case ASDF_TIME_FORMAT_YMDHMS:
-    case ASDF_TIME_FORMAT_DATETIME64:
-        /* ymdhms and datetime64 have no scalar ASDF representation of their own;
-         * astropy stores them (like isot) as an ISO-8601 string. */
-        check_format_strptime(ASDF_TIME_SFMT_ISO, buf, &tm, has_time, rest);
-        break;
-    case ASDF_TIME_FORMAT_YDAY:
-        check_format_strptime(ASDF_TIME_SFMT_YDAY, buf, &tm, has_time, rest);
-        break;
-    case ASDF_TIME_FORMAT_UNIX:
-        check_format_strptime(ASDF_TIME_SFMT_UNIX, buf, &tm, has_time, rest);
-        break;
-    default:
-        goto cleanup;
-    }
-
-    if (!rest) {
-        goto cleanup;
-    }
-
-    /* Handle optional fractional seconds */
-    if (has_time) {
-        const char *dot = strchr(rest, '.');
-        if (dot) {
-            double frac = 0;
-            sscanf(dot, "%lf", &frac);
-            nsec = (long)((frac - (int)frac) * 1e9);
-        }
-
-        /* Handle timezone offsets (Z/z = Zulu is ignored, just don't add any offset) */
-        const char *tz = strpbrk(rest, "+-");
-        if (tz && (*tz == '+' || *tz == '-')) {
-            tz_sign = *tz == '-' ? -1 : 1;
-            if (sscanf(tz + 1, "%2d:%2d", &tz_hour, &tz_min) < 1)
-                sscanf(tz + 1, "%2d", &tz_hour);
-        }
-    }
-
-    /* Convert to time_t and adjust for time zone */
-    time_t t = timegm(&tm);
-    if (t == (time_t)-1) {
-        goto cleanup;
-    }
-
-    t -= tz_sign * (tz_hour * SECONDS_PER_HOUR + tz_min * SECONDS_PER_MINUTE);
-
-    time->info.tm = *gmtime(&t);
-    time->info.ts.tv_sec = t;
-    time->info.ts.tv_nsec = nsec;
-    ret = 0;
-cleanup:
-    free(buf);
-    return ret;
-}
 
 
 static int asdf_time_parse_fits(asdf_time_t *time) {
@@ -551,6 +452,112 @@ static int asdf_time_parse_decimalyear(asdf_time_t *time) {
     return 0;
 }
 
+
+/*
+ * Only asdf_time_parse_std needs strptime.  The guard used to wrap every
+ * parser below it, so on a platform without strptime they were all absent
+ * and the file failed to link -- the format dispatch calls them
+ * unconditionally.  It now wraps just the one function that needs it.
+ */
+#ifdef HAVE_STRPTIME
+static const char *ASDF_TIME_SFMT_ISO[] = {"%Y-%m-%d %H:%M:%S", "%Y-%m-%d"};
+static const char *ASDF_TIME_SFMT_YDAY[] = {"%Y:%j:%H:%M:%S", "%Y:%j"};
+static const char *ASDF_TIME_SFMT_UNIX[] = {"%s"};
+
+#define check_format_strptime(TYPE, BUF, TM, HAS_TIME, STATUS) \
+    { \
+        size_t idx = 0; \
+        do { \
+            (STATUS) = strptime((BUF), (TYPE)[idx], (TM)); \
+            if ((STATUS)) { \
+                (HAS_TIME) = true; \
+                break; \
+            } \
+        } while (idx++ && idx < ARRAY_SIZE(TYPE)); \
+    }
+static int asdf_time_parse_std(asdf_time_t *time) {
+    if (UNLIKELY(!time))
+        return -1;
+
+    struct tm tm = {0};
+    char tz_sign = 0;
+    int tz_hour = 0;
+    int tz_min = 0;
+    long nsec = 0;
+    bool has_time = false;
+    char *rest = NULL;
+    char *buf = strdup(time->value);
+    int ret = -1;
+
+    if (!buf) {
+        ASDF_ERROR_OOM(NULL);
+        goto cleanup;
+    }
+
+    /* Normalize separators (replace 'T' or 't' with space) */
+    for (char *c = buf; *c; ++c) {
+        if (*c == 'T' || *c == 't')
+            *c = ' ';
+    }
+
+    switch (time->format) {
+    case ASDF_TIME_FORMAT_DATETIME:
+    case ASDF_TIME_FORMAT_ISO:
+    case ASDF_TIME_FORMAT_ISOT:
+    case ASDF_TIME_FORMAT_YMDHMS:
+    case ASDF_TIME_FORMAT_DATETIME64:
+        /* ymdhms and datetime64 have no scalar ASDF representation of their own;
+         * astropy stores them (like isot) as an ISO-8601 string. */
+        check_format_strptime(ASDF_TIME_SFMT_ISO, buf, &tm, has_time, rest);
+        break;
+    case ASDF_TIME_FORMAT_YDAY:
+        check_format_strptime(ASDF_TIME_SFMT_YDAY, buf, &tm, has_time, rest);
+        break;
+    case ASDF_TIME_FORMAT_UNIX:
+        check_format_strptime(ASDF_TIME_SFMT_UNIX, buf, &tm, has_time, rest);
+        break;
+    default:
+        goto cleanup;
+    }
+
+    if (!rest) {
+        goto cleanup;
+    }
+
+    /* Handle optional fractional seconds */
+    if (has_time) {
+        const char *dot = strchr(rest, '.');
+        if (dot) {
+            double frac = 0;
+            sscanf(dot, "%lf", &frac);
+            nsec = (long)((frac - (int)frac) * 1e9);
+        }
+
+        /* Handle timezone offsets (Z/z = Zulu is ignored, just don't add any offset) */
+        const char *tz = strpbrk(rest, "+-");
+        if (tz && (*tz == '+' || *tz == '-')) {
+            tz_sign = *tz == '-' ? -1 : 1;
+            if (sscanf(tz + 1, "%2d:%2d", &tz_hour, &tz_min) < 1)
+                sscanf(tz + 1, "%2d", &tz_hour);
+        }
+    }
+
+    /* Convert to time_t and adjust for time zone */
+    time_t t = timegm(&tm);
+    if (t == (time_t)-1) {
+        goto cleanup;
+    }
+
+    t -= tz_sign * (tz_hour * SECONDS_PER_HOUR + tz_min * SECONDS_PER_MINUTE);
+
+    time->info.tm = *gmtime(&t);
+    time->info.ts.tv_sec = t;
+    time->info.ts.tv_nsec = nsec;
+    ret = 0;
+cleanup:
+    free(buf);
+    return ret;
+}
 #else
 #if defined(_MSC_VER)
 #pragma message("strptime() not available, times will not be parsed")
