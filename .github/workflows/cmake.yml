@@ -222,7 +222,7 @@ jobs:
       continue-on-error: true
       run: |
         call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
-        set INC=/I src /I include /I build /I third_party\STC\include /I third_party\libfyaml\install\include /I C:\vcpkg\installed\x64-windows\include
+        set INC=/I src /I include /I build\include /I build /I third_party\STC\include /I third_party\libfyaml\install\include /I C:\vcpkg\installed\x64-windows\include
         echo ==== default preprocessor:
         cl /nologo /std:c11 /experimental:c11atomics %INC% /c src\yaml.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
         echo ==== with /Zc:preprocessor:
