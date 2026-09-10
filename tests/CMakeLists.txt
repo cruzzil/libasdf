@@ -35,6 +35,19 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
 # Build munit static library
 add_library(munit ${MUNIT_DIR}/munit.c)
 
+if(MSVC)
+    # CMAKE_C_STANDARD 11 makes CMake pass /std:c11 to every target. MSVC then
+    # defines __STDC_VERSION__ as C11 while still not implementing VLAs, and
+    # munit keys its array-parameter syntax off exactly that macro -- so it
+    # picks `data[size]`, which MSVC cannot compile, instead of the `data[]`
+    # it falls back to otherwise. Its default C mode compiles clean.
+    #
+    # It has to be the target's C_STANDARD rather than an appended flag:
+    # MSVC has no /std: value meaning "default", so there is nothing to
+    # override the standard flag with once CMake has emitted it.
+    set_target_properties(munit PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED OFF)
+endif()
+
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(munit PRIVATE MUNIT_NO_FORK)
 endif()

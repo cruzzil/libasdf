@@ -149,8 +149,12 @@ jobs:
         cat "$logfile"
 
   # An experiment, not a gate, and not for upstream: find out what actually
-  # stands between libasdf and an MSVC build. Everything continues on error so
-  # one run reports the whole list rather than stopping at the first failure.
+  # stands between libasdf and an MSVC build.
+  #
+  # PowerShell and cmd throughout, deliberately. Git Bash is on the runner but
+  # a Windows developer is not using it, and it silently rewrites POSIX paths
+  # into Windows ones on the way to native programs -- so a job written in
+  # bash tests MSYS's path translation as much as it tests the build.
   windows:
     name: 'Windows (MSVC) -- exploratory'
     runs-on: windows-latest
@@ -163,233 +167,81 @@ jobs:
       with:
         submodules: true
 
-    # zlib, bzip2 and lz4 are all in vcpkg and install cleanly, and they ship
-    # `.pc` files, so with pkg-config present the existing detection finds
-    # them unchanged. libmd, libstatgrab and argp are not in vcpkg.
+    # zlib, bzip2 and lz4 are all in vcpkg and ship `.pc` files, so with
+    # pkg-config present the existing detection finds them unchanged.
     - name: Dependencies vcpkg can supply
-      shell: bash
+      shell: pwsh
       continue-on-error: true
       run: |
         vcpkg install zlib bzip2 lz4 --triplet x64-windows
         choco install -y --no-progress pkgconfiglite
 
-    # libfyaml is the one dependency with no Windows package anywhere, and
-    # `src/util.h` includes `libfyaml.h`, so nothing compiles without it.
-    # It does support MSVC natively, though -- see its own
-    # `doc/windows-support.txt` -- so vendor it and build it here.
+    # libfyaml is the one dependency with no Windows package, and src/util.h
+    # includes libfyaml.h, so nothing compiles without it. It supports MSVC
+    # natively -- see its own doc/windows-support.txt -- so vendor and build it.
     - name: Vendor and build libfyaml
-      shell: bash
+      shell: pwsh
       continue-on-error: true
       run: |
         git clone --depth 1 https://github.com/pantoniou/libfyaml.git third_party/libfyaml
-        cmake -S third_party/libfyaml -B third_party/libfyaml/build \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DCMAKE_INSTALL_PREFIX="$PWD/third_party/libfyaml/install" \
-          -DBUILD_SHARED_LIBS=OFF 2>&1 | tail -25
-        echo "=== libfyaml configure exit: ${PIPESTATUS[0]}"
-        cmake --build third_party/libfyaml/build --config ${{ env.BUILD_TYPE }} 2>&1 | tee fyaml.log | tail -25
-        echo "=== libfyaml build exit: ${PIPESTATUS[0]}"
-        cmake --install third_party/libfyaml/build --config ${{ env.BUILD_TYPE }} 2>&1 | tail -5 || true
-        echo "=== what got installed:"
-        find third_party/libfyaml/install -name '*.h' -o -name '*.lib' -o -name '*.pc' | head -20
-        echo "=== distinct libfyaml errors, if any:"
-        grep -oE "error C[0-9]+: .*" fyaml.log | sort -u | head -20 || echo "(none)"
+        $install = Join-Path $PWD 'third_party\libfyaml\install'
+        cmake -S third_party/libfyaml -B third_party/libfyaml/build `
+          -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
+          -DCMAKE_INSTALL_PREFIX="$install" `
+          -DBUILD_SHARED_LIBS=OFF 2>&1 | Select-Object -Last 15
+        cmake --build third_party/libfyaml/build --config $env:BUILD_TYPE 2>&1 |
+            Tee-Object fyaml.log | Select-Object -Last 10
+        cmake --install third_party/libfyaml/build --config $env:BUILD_TYPE 2>&1 |
+            Select-Object -Last 3
+        Write-Host "=== libfyaml errors, if any:"
+        Select-String -Path fyaml.log -Pattern 'error C\d+' |
+            ForEach-Object { $_.Line } | Sort-Object -Unique | Select-Object -First 10
 
-    # Tests are on: munit compiles fine under MSVC as long as /std:c11 is not
-    # forced on it globally (see src/CMakeLists.txt). The tool stays off --
-    # main.c wants argp, which Windows has no port of.
-    - name: Configure libasdf against the vendored libfyaml
-      shell: bash
+    # Tests are on; the tool is not -- main.c wants argp, which has no Windows
+    # port, and the configure now detects that and says so.
+    - name: Configure
+      shell: pwsh
       continue-on-error: true
       run: |
-        FY="$PWD/third_party/libfyaml/install"
-        mkdir -p build && cd build
-        PKG_CONFIG_PATH="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/pkgconfig" \
-        cmake .. \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
-          -DVCPKG_TARGET_TRIPLET=x64-windows \
-          -DUSE_STATGRAB=OFF \
-          -DENABLE_TOOL=OFF \
-          -DFYAML_NO_PKGCONFIG=YES \
-          -DFYAML_INCLUDEDIR="$FY/include" \
-          -DFYAML_LIBDIR="$FY/lib" \
-          -DCMAKE_C_FLAGS="/Zc:preprocessor" \
-          -DENABLE_TESTING_ALL=YES 2>&1 | tail -40
-        echo "=== configure exit: ${PIPESTATUS[0]}"
-
-    # Group what is left by cause, so the output is a porting list rather
-    # than a wall of C1083s.
-    # Compile the actual failing translation unit directly, with and without
-    # the conforming preprocessor, rather than inferring from a full build
-    # whose flags CMake may or may not have passed through.
-    - name: Does src/yaml.c need /Zc:preprocessor?
-      shell: cmd
-      continue-on-error: true
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
-        set INC=/I src /I include /I build\include /I build /I third_party\STC\include /I third_party\libfyaml\install\include /I C:\vcpkg\installed\x64-windows\include
-        echo ==== default preprocessor:
-        cl /nologo /std:c11 /experimental:c11atomics %INC% /c src\yaml.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== with /Zc:preprocessor:
-        cl /nologo /std:c11 /experimental:c11atomics /Zc:preprocessor %INC% /c src\yaml.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== done
-
-    # The first error is a broken `_m_value` typedef for `off_t`, so check
-    # directly whether MSVC has the type at all in the context libasdf uses it.
-    - name: Does MSVC have off_t here?
-      shell: cmd
-      continue-on-error: true
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
-        echo ==== off_t with no includes, as asdf_block_index.h has it:
-        echo off_t probe; > offprobe.c
-        cl /nologo /std:c11 /c offprobe.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== off_t after ^<sys/types.h^>:
-        echo #include ^<sys/types.h^> > offprobe2.c
-        echo off_t probe; >> offprobe2.c
-        cl /nologo /std:c11 /c offprobe2.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== ssize_t after ^<sys/types.h^>:
-        echo #include ^<sys/types.h^> > offprobe3.c
-        echo ssize_t probe; >> offprobe3.c
-        cl /nologo /std:c11 /c offprobe3.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== done
-
-    # munit guards its array-parameter syntax on __STDC_VERSION__ >= C99.
-    # MSVC in /std:c11 sets that macro but still has no VLAs, so the guard
-    # picks a form it cannot compile. Check whether dropping /std:c11 is all
-    # it wants.
-    - name: Does munit need /std:c11 dropped?
-      shell: cmd
-      continue-on-error: true
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
-        echo ==== munit with /std:c11 (what this job has been doing):
-        cl /nologo /std:c11 /I tests\munit /c tests\munit\munit.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== munit with MSVC's default C mode:
-        cl /nologo /I tests\munit /c tests\munit\munit.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== munit with /std:clatest:
-        cl /nologo /std:clatest /I tests\munit /c tests\munit\munit.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
-        echo ==== done
-
-    - name: What flags did CMake actually record?
-      shell: bash
-      continue-on-error: true
-      run: |
-        grep -hE "^CMAKE_C_FLAGS(_RELWITHDEBINFO)?:" build/CMakeCache.txt || true
-        echo "--- AdditionalOptions in the generated project:"
-        grep -ohE "<AdditionalOptions>[^<]*" build/src/libasdf_objs.vcxproj | sort -u | head -5
+        $fy = Join-Path $PWD 'third_party\libfyaml\install'
+        $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+        $env:PKG_CONFIG_PATH = "$vcpkg\installed\x64-windows\lib\pkgconfig"
+        cmake -S . -B build `
+          -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
+          -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          -DUSE_STATGRAB=OFF `
+          -DFYAML_NO_PKGCONFIG=YES `
+          -DFYAML_INCLUDEDIR="$fy\include" `
+          -DFYAML_LIBDIR="$fy\lib" `
+          -DCMAKE_C_FLAGS="/Zc:preprocessor" `
+          -DENABLE_TESTING_ALL=YES 2>&1 | Select-Object -Last 30
+        Write-Host "=== configure exit: $LASTEXITCODE"
 
     - name: Build, and classify what fails
-      shell: bash
+      shell: pwsh
       continue-on-error: true
       run: |
-        set +e
-        cmake --build build --config ${{ env.BUILD_TYPE }} > build.log 2>&1
-        echo "=== build exit: $?"
-        echo
-        echo "================ missing headers, by header ================"
-        grep -oE "Cannot open include file: '[^']+'" build.log | sort | uniq -c | sort -rn || echo "(none)"
-        echo
-        echo "================ other distinct errors ================"
-        grep -E "error [A-Z]+[0-9]+:" build.log | sed 's/ \[D:.*//; s|.*libasdf.libasdf.||' \
-          | grep -v "Cannot open include file" | sort -u | head -40 || echo "(none)"
-        echo
-        echo "================ last 40 lines ================"
-        tail -40 build.log
+        cmake --build build --config $env:BUILD_TYPE 2>&1 | Tee-Object build.log | Out-Null
+        Write-Host "=== build exit: $LASTEXITCODE"
+        Write-Host ""
+        Write-Host "================ missing headers ================"
+        Select-String -Path build.log -Pattern "Cannot open include file: '([^']+)'" |
+            ForEach-Object { $_.Matches[0].Groups[1].Value } |
+            Group-Object | Sort-Object Count -Descending |
+            ForEach-Object { "{0,4}  {1}" -f $_.Count, $_.Name }
+        Write-Host ""
+        Write-Host "================ distinct errors ================"
+        Select-String -Path build.log -Pattern 'error [A-Z]+\d+:' |
+            ForEach-Object { ($_.Line -replace ' \[[A-Z]:.*$', '') -replace '.*libasdf.libasdf.', '' } |
+            Where-Object { $_ -notmatch 'Cannot open include file' } |
+            Sort-Object -Unique | Select-Object -First 40
+        Write-Host ""
+        Write-Host "================ last 25 lines ================"
+        Get-Content build.log -Tail 25
 
-    # Linking is not working. Compile a real program against the headers and
-    # the import library, run it, and check it round-trips a file.
-    - name: Write the smoke test
-      shell: bash
-      continue-on-error: true
-      run: |
-        cat > smoke.c <<'EOF'
-        #include <asdf.h>
-        #include <stdio.h>
-        #include <string.h>
-
-        int main(void) {
-            asdf_file_t *w = asdf_open("smoke.asdf", "w");
-
-            if (!w) {
-                puts("open for write failed");
-                return 1;
-            }
-
-            asdf_set_string0(w, "name", "Dennis Ritchie");
-            asdf_set_int64(w, "answer", 42);
-
-            if (asdf_write_to(w, "smoke.asdf") != 0) {
-                puts("write failed");
-                return 1;
-            }
-
-            asdf_close(w);
-
-            asdf_file_t *r = asdf_open("smoke.asdf", "r");
-
-            if (!r) {
-                puts("open for read failed");
-                return 1;
-            }
-
-            const char *name = NULL;
-            int64_t answer = 0;
-
-            if (asdf_get_string0(r, "name", &name) != ASDF_VALUE_OK) {
-                puts("get name failed");
-                return 1;
-            }
-
-            if (asdf_get_int64(r, "answer", &answer) != ASDF_VALUE_OK) {
-                puts("get answer failed");
-                return 1;
-            }
-
-            printf("name=%s answer=%lld\n", name, (long long)answer);
-
-            if (strcmp(name, "Dennis Ritchie") != 0 || answer != 42) {
-                puts("MISMATCH");
-                return 1;
-            }
-
-            asdf_close(r);
-            puts("SMOKE OK");
-            return 0;
-        }
-        EOF
-        echo "--- import libraries the build produced:"
-        find build -name '*.lib' | sort
-
-    - name: Compile and run it
-      shell: cmd
-      continue-on-error: true
-      run: |
-        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
-        for /f "delims=" %%L in ('dir /s /b build\src\*.lib') do set ASDFLIB=%%L
-        echo using import library: %ASDFLIB%
-        rem /Zc:preprocessor is required, not optional: asdf_open and
-        rem asdf_write_to are _Generic macros dispatched through a
-        rem __VA_ARGS__ argument count, which MSVC's traditional
-        rem preprocessor gets wrong -- it picks the FILE* overload for a
-        rem filename.
-        cl /nologo /std:c11 /Zc:preprocessor /experimental:c11atomics ^
-           /I include /I build\include ^
-           /I third_party\libfyaml\install\include ^
-           smoke.c /Fe:smoke.exe /link "%ASDFLIB%"
-        if errorlevel 1 ( echo COMPILE/LINK FAILED & exit /b 0 )
-        for /f "delims=" %%D in ('dir /s /b build\asdf.dll') do copy "%%D" . >nul
-        rem zlib, bzip2 and lz4 come from vcpkg's x64-windows triplet, which is
-        rem dynamic, so their DLLs have to be findable or the process dies at
-        rem load time with 0xC0000135 (STATUS_DLL_NOT_FOUND).
-        set PATH=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows\bin;%PATH%
-        smoke.exe
-        echo ---- smoke exit %errorlevel%
-
-    # A crash on Windows pops a Windows Error Reporting dialog by default and
-    # then waits for a click that will never come, which is what hung the
-    # first attempt. Turn that off, and cap each test as well.
+    # A crash on Windows pops a Windows Error Reporting dialog and waits for a
+    # click that will never come, which is what hung the first attempt.
     - name: Silence the crash dialogs
       shell: pwsh
       continue-on-error: true
@@ -397,45 +249,72 @@ jobs:
         $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
         New-ItemProperty -Path $k -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
         New-ItemProperty -Path $k -Name Disabled  -Value 1 -PropertyType DWord -Force | Out-Null
-        Write-Host "WER dialogs disabled"
 
     - name: Run the test suite
-      shell: bash
-      timeout-minutes: 15
+      shell: pwsh
+      timeout-minutes: 10
       continue-on-error: true
       run: |
-        set +e
-        export PATH="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin:$PATH"
-        cd build
-        ctest -C ${{ env.BUILD_TYPE }} --timeout 60 --output-on-failure > ctest.log 2>&1
-        echo "=== ctest exit: $?"
-        tail -60 ctest.log
+        $env:PATH = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin;$env:PATH"
+        Push-Location build
+        ctest -C $env:BUILD_TYPE --timeout 20 --output-on-failure 2>&1 |
+            Tee-Object ctest.log | Out-Null
+        Write-Host "=== ctest exit: $LASTEXITCODE"
+        Get-Content ctest.log -Tail 45
+        Pop-Location
 
-    - name: Did the library actually come out?
-      shell: bash
+    - name: Smoke test the DLL
+      shell: pwsh
       continue-on-error: true
       run: |
-        find build -name 'asdf*.lib' -o -name 'asdf*.dll' | sort
-        echo "--- errors in libasdf's own sources:"
-        grep -cE "libasdf.src.[A-Za-z0-9_/\\\\.]+[.](c|h)\([0-9]+,[0-9]+\): error" build.log || echo 0
+        @'
+        #include <asdf.h>
+        #include <stdio.h>
+        #include <string.h>
 
-    - name: What in the source is POSIX-only?
-      shell: bash
-      if: always()
+        int main(void) {
+            asdf_file_t *w = asdf_open("smoke.asdf", "w");
+            if (!w) { puts("open for write failed"); return 1; }
+            asdf_set_string0(w, "name", "Dennis Ritchie");
+            asdf_set_int64(w, "answer", 42);
+            if (asdf_write_to(w, "smoke.asdf") != 0) { puts("write failed"); return 1; }
+            asdf_close(w);
+
+            asdf_file_t *r = asdf_open("smoke.asdf", "r");
+            if (!r) { puts("open for read failed"); return 1; }
+            const char *name = NULL;
+            int64_t answer = 0;
+            if (asdf_get_string0(r, "name", &name) != ASDF_VALUE_OK) { puts("get name failed"); return 1; }
+            if (asdf_get_int64(r, "answer", &answer) != ASDF_VALUE_OK) { puts("get answer failed"); return 1; }
+            printf("name=%s answer=%lld\n", name, (long long)answer);
+            if (strcmp(name, "Dennis Ritchie") != 0 || answer != 42) { puts("MISMATCH"); return 1; }
+            asdf_close(r);
+            puts("SMOKE OK");
+            return 0;
+        }
+        '@ | Set-Content -Encoding ascii smoke.c
+        Get-ChildItem -Recurse build -Filter '*.lib' | ForEach-Object { $_.FullName }
+
+    # Compiled from a developer command prompt, which is how a Windows user
+    # would do it. /Zc:preprocessor is required, not optional: asdf_open and
+    # asdf_write_to are _Generic macros dispatched on a __VA_ARGS__ argument
+    # count, which MSVC's traditional preprocessor gets wrong.
+    - name: Compile and run the smoke test
+      shell: cmd
       continue-on-error: true
       run: |
-        set +e
-        echo "== POSIX headers, and which files include them"
-        for h in sys/mman.h unistd.h pthread.h sys/eventfd.h sys/syscall.h \
-                 sys/poll.h sys/ioctl.h endian.h argp.h sys/time.h; do
-          printf "%-18s " "$h"
-          grep -rl "#include <$h>" src include 2>/dev/null | tr '\n' ' '
-          echo
-        done
-        echo
-        echo "== POSIX functions and types named in src/"
-        grep -rhoE '\b(ssize_t|off_t|strerror_r|strndup|mmap|munmap|ftruncate|getline|asprintf|realpath|mkstemp|localtime_r|gmtime_r|timegm|strptime|nanosleep|clock_gettime)\b' \
-          src | sort | uniq -c | sort -rn
+        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
+        for /f "delims=" %%L in ('dir /s /b build\src\*.lib') do set ASDFLIB=%%L
+        echo using import library: %ASDFLIB%
+        cl /nologo /std:c11 /Zc:preprocessor /experimental:c11atomics ^
+           /I include /I build\include ^
+           /I third_party\libfyaml\install\include ^
+           smoke.c /Fe:smoke.exe /link "%ASDFLIB%"
+        if errorlevel 1 ( echo COMPILE/LINK FAILED & exit /b 0 )
+        for /f "delims=" %%D in ('dir /s /b build\asdf.dll') do copy "%%D" . >nul
+        set PATH=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows\bin;%PATH%
+        smoke.exe
+        echo ---- smoke exit %errorlevel%
 
   # Test the documentation build if the build passes
   docs:
