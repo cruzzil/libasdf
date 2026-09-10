@@ -145,7 +145,9 @@ foreach(source_file ${source_files})
         $<TARGET_OBJECTS:libasdf_objs>
         munit
         util
-        m
+        # The MSVC CRT has the math functions; there is no separate libm to
+        # link, and asking for one fails with LNK1104: cannot open 'm.lib'.
+        $<$<NOT:$<BOOL:${WIN32}>>:m>
     )
 
     target_link_directories(${test_executable} PRIVATE
