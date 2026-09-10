@@ -261,13 +261,18 @@ jobs:
       shell: bash
       continue-on-error: true
       run: |
-        cmake --build build --config ${{ env.BUILD_TYPE }} 2>&1 | tee build.log | tail -20
+        set +e
+        cmake --build build --config ${{ env.BUILD_TYPE }} > build.log 2>&1
+        echo "=== build exit: $?"
         echo
         echo "================ missing headers, by header ================"
         grep -oE "Cannot open include file: '[^']+'" build.log | sort | uniq -c | sort -rn || echo "(none)"
         echo
         echo "================ other distinct errors ================"
-        grep -oE "error C[0-9]+: .*" build.log | grep -v "Cannot open include file" | sort -u | head -25 || echo "(none)"
+        grep -oE "error [A-Z]+[0-9]+: .*" build.log | grep -v "Cannot open include file" | sort -u | head -25 || echo "(none)"
+        echo
+        echo "================ last 40 lines ================"
+        tail -40 build.log
 
     - name: Test
       shell: bash
