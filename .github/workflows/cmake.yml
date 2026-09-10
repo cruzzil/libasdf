@@ -175,6 +175,12 @@ jobs:
       run: |
         vcpkg install zlib bzip2 lz4 --triplet x64-windows
         choco install -y --no-progress pkgconfiglite
+        # Chocolatey's PATH change does not reach later steps on its own, and
+        # without pkg-config the configure silently skips every
+        # pkg_check_modules -- zlib, bzip2 and lz4 then go undetected and the
+        # build fails on their headers.
+        "C:\ProgramData\chocolatey\bin" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+        & "C:\ProgramData\chocolatey\bin\pkg-config.exe" --version
 
     # libfyaml is the one dependency with no Windows package, and src/util.h
     # includes libfyaml.h, so nothing compiles without it. It supports MSVC
