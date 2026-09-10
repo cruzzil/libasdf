@@ -1,86 +1,100 @@
 # What stands between libasdf and a Windows (MSVC) build
 
-Findings from the exploratory `windows` job in `.github/workflows/cmake.yml`,
-run on `windows-latest` with MSVC 19.51 and vcpkg. **Not for upstream as-is** —
-the job exists to answer the question, not to gate anything.
+From the exploratory `windows` job in `.github/workflows/cmake.yml`, run on
+`windows-latest` with MSVC 19.51 and vcpkg. **Not for upstream as-is** — the
+job exists to answer the question, not to gate anything.
 
-## Short version
+## Correction
 
-One hard blocker, then a tractable porting job. The dependencies people assume
-are the problem (zlib, bzip2, lz4) are not: vcpkg has all three and the
-existing detection finds them unchanged once `pkg-config` is on the runner.
+An earlier version of this file said libfyaml had no Windows support and was a
+hard blocker. **That was wrong.** The grep behind it looked only at
+`src/` and `include/` and missed everything: libfyaml ships
+`doc/windows-support.txt`, a `cmake/clang-windows-toolchain.cmake`, and a
+`CMakeLists.txt` that branches on `WIN32`/`MSVC` throughout.
 
-## The blocker: libfyaml
+Vendored and built from source with MSVC, **libfyaml configures and compiles
+clean** — configure exit 0, build exit 0, headers and `.lib` installed. With it
+in place plus zlib/bzip2/lz4 from vcpkg, **libasdf itself now configures
+successfully on Windows.**
 
-`pkg_check_modules(FYAML libfyaml REQUIRED)` fails, and configure stops there.
-libfyaml is the YAML engine — `src/util.h` and `src/file.h` include
-`libfyaml.h`, so it is on the include path of essentially every translation
-unit, and nothing compiles without it.
-
-It is not in vcpkg. It ships a `CMakeLists.txt`, so it is not autotools-only,
-but a search of its `src/` and `include/` for `_WIN32`, `MSVC` or `MinGW`
-returns **nothing**: there is no Windows support in it to build against.
-
-So a Windows port of libasdf needs a Windows port of libfyaml first, or a
-second YAML backend behind the `asdf_yaml_*` seam.
-
-## Dependencies, once pkg-config exists
+## Where it stands
 
 | | |
 |---|---|
-| BZip2 1.0.8 | found (vcpkg) |
-| liblz4 1.10.0 | found (vcpkg) |
-| zlib 1.3.2 | found (vcpkg) |
-| libfyaml | **not available** |
-| libmd (`md5.h`) | not in vcpkg; needs a bundled MD5 or a CryptoAPI path |
-| libstatgrab | not in vcpkg; `USE_STATGRAB=OFF` already exists |
-| argp | not in vcpkg; only `src/main.c` (the CLI) needs it |
+| libfyaml, vendored + MSVC | **builds clean** |
+| zlib 1.3.2, bzip2 1.0.8, lz4 1.10.0 | found via vcpkg + `pkg-config` |
+| libasdf configure | **succeeds** |
+| libasdf compile | most of `src/` compiles; stops on the two below |
 
-The runner has no `pkg-config`; `choco install pkgconfiglite` supplies one and
-vcpkg ships `.pc` files, so no build-system change is needed for these.
+## What is actually left
 
-## Toolchain
+**1. `ASDF_CONSTRUCTOR` — `include/asdf/util.h`**
 
-MSVC rejects C11 `<stdatomic.h>` unless it is asked to:
-`vcruntime_c11_stdatomic.h(12): error C1189: "C atomic support is not enabled"`.
-`/experimental:c11atomics /std:c11` clears it. `src/error.c` is the first file
-to hit it.
+```c
+/* AFAIK this should be supported on virtually any target/compiler */
+#define ASDF_CONSTRUCTOR __attribute__((constructor))
+```
 
-## POSIX in the source
+MSVC has no `__attribute__`. `src/value_util.c` uses it for
+`asdf_common_tag_map_create`/`_destroy` and produces 12 errors. The MSVC
+equivalent is a function pointer in `.CRT$XCU` (and `.CRT$XPU` for the
+destructor), which the CRT walks before `main` — see `shim.c` in libasdf-rs
+for a working spelling. Note the pointer must have **external** linkage or
+`/include:` cannot resolve it.
 
-| Header | Files |
-|---|---|
-| `sys/mman.h` | `block.c`, `compression/compression.c`, `core/ndarray.c`, `file.c`, `stream.c` |
-| `unistd.h` | `compression/compression.c`, `file.c`, `parser.c`, `stream.h` |
-| `pthread.h`, `sys/eventfd.h`, `sys/syscall.h`, `sys/poll.h`, `sys/ioctl.h` | `compression/compression.c` |
-| `endian.h` | `compat/endian.h` (already probed, has fallbacks) |
-| `argp.h` | `main.c` (CLI only) |
-| `sys/time.h` | `include/asdf/core/time.h` — gratuitous: it needs only `struct timespec`, which `<time.h>` provides |
+**2. `<sys/time.h>` — `include/asdf/core/time.h`**
 
-Functions and types: `off_t` (53), `mmap`/`munmap` (18), `strndup` (12),
-`timegm` (10), `ssize_t` (9), `strptime` (4), `asprintf` (4), `mkstemp`,
-`ftruncate`.
+Filed as asdf-format/libasdf#261. The header needs only `struct timespec`,
+which the `<time.h>` on the next line already provides.
 
-Two clusters do most of the work: memory-mapped reading, which needs
-`CreateFileMapping`/`MapViewOfFile` or a read-into-buffer fallback, and the
-threaded compression path in `compression.c`, which is built on eventfd,
-`poll` and raw syscalls.
+Both are in *public* headers, so they bite anyone vendoring them, not just a
+Windows build of libasdf.
 
-## Order of work, if it is wanted
+## Still ahead, not yet reached
 
-1. Get libfyaml building on Windows, or put a second backend behind the YAML
-   seam. Nothing else matters until this is settled.
-2. `/experimental:c11atomics`, and the `sys/time.h` include dropped from
-   `core/time.h` — a one-line change that also unblocks anyone else vendoring
-   the public headers.
-3. An mmap shim, or a non-mmap read path.
-4. `strndup`, `asprintf`, `timegm`, `strptime`, `mkstemp`, `ftruncate` shims;
-   `off_t`/`ssize_t` to fixed-width types in internal signatures.
-5. The compression thread pool, which is the largest single piece.
-6. The CLI last: it needs an `argp` replacement of its own.
+The build stops before these, so they are from reading the source, not from
+the compiler:
+
+- `sys/mman.h` — `block.c`, `file.c`, `stream.c`, `core/ndarray.c`,
+  `compression/compression.c`. Needs `CreateFileMapping`/`MapViewOfFile` or a
+  read-into-buffer fallback. `mmap`/`munmap` appear 18 times.
+- `unistd.h` — `file.c`, `parser.c`, `stream.h`, `compression.c`.
+- The threaded compression path in `compression.c`: `pthread.h`,
+  `sys/eventfd.h`, `sys/syscall.h`, `sys/poll.h`, `sys/ioctl.h`. Largest
+  single piece.
+- `ssize_t` (9 sites). MSVC has **no** `ssize_t` at all, under any include —
+  confirmed directly. `off_t` it does have, behind `<sys/types.h>`.
+- `strndup` (12), `timegm` (10), `strptime` (4), `asprintf` (4), `mkstemp`,
+  `ftruncate`.
+- `argp.h` — `main.c` only, so the CLI can come last.
+
+## Fixed on this branch to get this far
+
+- **`-DUSE_STATGRAB=OFF` did nothing.** The option was declared but never
+  consulted, so `pkg_check_modules(STATGRAB libstatgrab REQUIRED)` ran anyway
+  and configure died on any platform without libstatgrab. The code already
+  treats it as optional — `HAVE_STATGRAB` follows `STATGRAB_FOUND`. Worth
+  sending upstream on its own; it is not Windows-specific.
+- **`<sys/types.h>` was missing** wherever `off_t`/`ssize_t` are used (13
+  files). glibc supplies them transitively, which hides it. On MSVC nothing
+  does, so STC's `i_type asdf_block_index, off_t` expanded with an unknown
+  type and `vec.h` produced a hundred syntax errors that looked like an STC
+  problem and were not. STC compiles fine under MSVC on its own, with either
+  preprocessor.
+
+Both verified on Linux: builds clean, 22/22 tests.
+
+## Dead ends, recorded so they are not re-run
+
+- `/Zc:preprocessor` makes no difference. STC's macros are fine under MSVC's
+  traditional preprocessor; the problem was the undefined `off_t`.
+- MSVC does need `/experimental:c11atomics` for C11 `<stdatomic.h>`
+  (`src/error.c` hits it first).
+- `cmake/ASDFConfig.cmake` adds `-fvisibility=hidden` and
+  `-fmacro-prefix-map=` unconditionally; they reach `cl` as-is and should be
+  guarded.
 
 ## Reproducing
 
 The `windows` job runs on `workflow_dispatch`. Every step continues on error
-so one run reports the whole list, and the final step surveys the source even
-when configure never gets far enough to produce output.
+so one run reports the whole list.
