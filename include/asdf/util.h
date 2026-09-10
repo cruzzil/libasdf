@@ -3,7 +3,21 @@
 
 #include <asdf/config.h> // IWYU pragma: export
 
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 4)
+#if defined(_MSC_VER)
+/*
+ * Windows exports nothing by default, so an empty ASDF_EXPORT produces a DLL
+ * with no export table and no import library -- nothing can link against it.
+ * The symbol has to be marked on both sides: dllexport while the library is
+ * being built, dllimport when a caller includes the same header.
+ * ASDF_BUILDING_DLL is defined by the build for libasdf's own sources.
+ */
+#if defined(ASDF_BUILDING_DLL)
+#define ASDF_EXPORT __declspec(dllexport)
+#else
+#define ASDF_EXPORT __declspec(dllimport)
+#endif
+#define ASDF_LOCAL
+#elif defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 4)
 #define ASDF_EXPORT __attribute__((visibility("default")))
 #define ASDF_LOCAL __attribute__((visibility("hidden")))
 #else

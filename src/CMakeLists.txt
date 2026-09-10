@@ -39,6 +39,9 @@ set(libasdf_sources
 # i.e. build the source code once, and reuse it elsewhere
 add_library(libasdf_objs OBJECT ${libasdf_sources})
 set_property(TARGET libasdf_objs PROPERTY POSITION_INDEPENDENT_CODE 1)
+# Tells asdf/util.h to mark the public symbols dllexport rather than
+# dllimport.  Only meaningful on MSVC; harmless elsewhere.
+target_compile_definitions(libasdf_objs PRIVATE ASDF_BUILDING_DLL)
 
 # Generate a shared library (always)
 add_library(libasdf SHARED $<TARGET_OBJECTS:libasdf_objs>)
