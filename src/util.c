@@ -51,6 +51,9 @@ void **asdf_array_concat(void **dst, const void **src) {
             return NULL;
     }
 
-    memcpy(new_dst + (dst_len * sizeof(*dst)), (const void *)src, (src_len + 1) * sizeof(*src));
+    memcpy(
+        (char *)new_dst + (dst_len * sizeof(*dst)),
+        (const void *)src,
+        (src_len + 1) * sizeof(*src));
     return (void **)new_dst;
 }

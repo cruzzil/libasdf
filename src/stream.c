@@ -499,7 +499,8 @@ static void *file_open_mem(asdf_stream_t *stream, off_t offset, size_t size, siz
 
     // TODO: The ability to pass madvise flags would also be useful esp. for random vs seq access
 
-    addr += offset_delta;
+    // `void *` arithmetic is a GCC extension; MSVC wants a sized type.
+    addr = (char *)addr + offset_delta;
     mmap_info->addr = addr;
     mmap_info->size = map_size_aligned;
     mmap_info->offset = offset;
@@ -520,7 +521,7 @@ static int file_close_mem_impl(asdf_stream_t *stream, file_mmap_info_t *mmap_inf
     off_t offset = mmap_info->offset;
     size_t offset_aligned = offset & ~(page_size - 1);
     size_t offset_delta = offset - offset_aligned;
-    void *aligned_addr = mmap_info->addr - offset_delta;
+    void *aligned_addr = (char *)mmap_info->addr - offset_delta;
 
     if (0 != munmap(aligned_addr, mmap_info->size)) {
         ASDF_ERROR_SYSTEM(stream, errno);
@@ -898,7 +899,7 @@ static void *mem_open_mem(asdf_stream_t *stream, off_t offset, size_t size, size
 
 static int mem_close_mem(asdf_stream_t *stream, void *addr) {
     mem_userdata_t *data = stream->userdata;
-    if (addr < (void *)data->buf || addr > (void *)data->buf + data->size) {
+    if (addr < (void *)data->buf || addr > (void *)(data->buf + data->size)) {
         ASDF_LOG(
             stream,
             ASDF_LOG_WARN,
