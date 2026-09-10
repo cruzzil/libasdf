@@ -1,6 +1,7 @@
 /**
  * Internal utilities specifically for handling compressed blocks
  */
+#include <sys/types.h>
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>

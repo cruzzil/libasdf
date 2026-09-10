@@ -2,6 +2,7 @@
  * ASDF block functions
  */
 
+#include <sys/types.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>

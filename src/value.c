@@ -1,4 +1,5 @@
 #ifdef HAVE_CONFIG_H
+#include <sys/types.h>
 #include "config.h"
 #endif
 
