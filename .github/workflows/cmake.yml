@@ -362,6 +362,10 @@ jobs:
            smoke.c /Fe:smoke.exe /link "%ASDFLIB%"
         if errorlevel 1 ( echo COMPILE/LINK FAILED & exit /b 0 )
         for /f "delims=" %%D in ('dir /s /b build\asdf.dll') do copy "%%D" . >nul
+        rem zlib, bzip2 and lz4 come from vcpkg's x64-windows triplet, which is
+        rem dynamic, so their DLLs have to be findable or the process dies at
+        rem load time with 0xC0000135 (STATUS_DLL_NOT_FOUND).
+        set PATH=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows\bin;%PATH%
         smoke.exe
         echo ---- smoke exit %errorlevel%
 
