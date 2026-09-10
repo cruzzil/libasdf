@@ -37,10 +37,13 @@
     if ((tag) == NULL) { \
         assert_int(__len, ==, 0); \
     } else { \
-        char __buf[__len + 1]; \
+        /* Heap, not a VLA: MSVC has no variable-length arrays. */ \
+        char *__buf = malloc(__len + 1); \
+        assert_not_null(__buf); \
         memcpy(__buf, __tag, __len); \
         __buf[__len] = '\0'; \
         assert_string_equal(__buf, (tag)); \
+        free(__buf); \
     } \
 } while (0)
 
@@ -54,10 +57,13 @@
         assert_null(__value); \
     } else { \
         assert_int(__len, ==, strlen(value)); \
-        char __buf[__len + 1]; \
+        /* Heap, not a VLA: MSVC has no variable-length arrays. */ \
+        char *__buf = malloc(__len + 1); \
+        assert_not_null(__buf); \
         memcpy(__buf, __value, __len); \
         __buf[__len] = '\0'; \
         assert_string_equal(__buf, (value)); \
+        free(__buf); \
     } \
 } while (0)
 

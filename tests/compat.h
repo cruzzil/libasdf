@@ -189,6 +189,18 @@ typedef long long ssize_t;
  */
 #define asdf_test_symlink(target, link) (-1)
 
+static inline char *strndup(const char *s, size_t n) {
+    size_t len = strnlen(s, n);
+    char *p = (char *)malloc(len + 1);
+
+    if (!p)
+        return NULL;
+
+    memcpy(p, s, len);
+    p[len] = '\0';
+    return p;
+}
+
 static inline ssize_t readlink(const char *path, char *buf, size_t len) {
     (void)path;
     (void)buf;
