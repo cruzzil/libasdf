@@ -43,6 +43,17 @@ set_property(TARGET libasdf_objs PROPERTY POSITION_INDEPENDENT_CODE 1)
 # dllimport.  Only meaningful on MSVC; harmless elsewhere.
 target_compile_definitions(libasdf_objs PRIVATE ASDF_BUILDING_DLL)
 
+if(MSVC)
+    # Only libasdf's own sources need C11: error.c uses <stdatomic.h>, which
+    # MSVC gates behind /experimental:c11atomics, which in turn needs /std:c11.
+    #
+    # Kept off the global flags on purpose. /std:c11 makes MSVC define
+    # __STDC_VERSION__ as C11 while still not implementing VLAs, and munit
+    # keys its array-parameter syntax off that macro -- so a global /std:c11
+    # makes the test framework select a form MSVC cannot compile.
+    target_compile_options(libasdf_objs PRIVATE /std:c11 /experimental:c11atomics)
+endif()
+
 # Generate a shared library (always)
 add_library(libasdf SHARED $<TARGET_OBJECTS:libasdf_objs>)
 
