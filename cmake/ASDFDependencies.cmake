@@ -133,6 +133,9 @@ endif()
 # MD5 support is provided by libmd, which installs <md5.h> and MD5Init.  (On
 # older systems this header came from libbsd, which nowadays depends on libmd
 # for it.)  libmd ships no pkg-config file, so probe for the header directly.
+# glibc's backtrace() lives here; the test wrapper uses it when present.
+check_include_file(execinfo.h ASDF_HAVE_EXECINFO)
+
 check_include_file(md5.h HAVE_MD5_H)
 
 if(NOT HAVE_MD5_H)

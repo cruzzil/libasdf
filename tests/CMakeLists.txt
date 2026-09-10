@@ -33,6 +33,17 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
         DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # Build munit static library
+if(ASDF_HAVE_EXECINFO)
+    add_compile_definitions(ASDF_HAVE_EXECINFO)
+endif()
+
+if(MSVC)
+    # The test sources include libasdf's internal headers, which reach
+    # <stdatomic.h>; MSVC gates that behind /experimental:c11atomics, which
+    # needs /std:c11. munit is exempted just below.
+    add_compile_options(/std:c11 /experimental:c11atomics)
+endif()
+
 add_library(munit ${MUNIT_DIR}/munit.c)
 
 if(MSVC)
