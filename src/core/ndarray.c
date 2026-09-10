@@ -1811,7 +1811,8 @@ static inline asdf_ndarray_err_t asdf_ndarray_read_tile_main_loop(
     uint32_t inner_dim = ndim - 1;
     uint64_t inner_nelem = shape[inner_dim];
     size_t inner_size = inner_nelem * dst_elsize;
-    void *dst_tmp = dst;
+    // `char *`, not `void *`: arithmetic on `void *` is a GCC extension.
+    char *dst_tmp = dst;
 
     while (!done) {
         overflow = convert(dst_tmp, src, inner_nelem, dst_elsize);
@@ -1820,7 +1821,7 @@ static inline asdf_ndarray_err_t asdf_ndarray_read_tile_main_loop(
         uint32_t dim = inner_dim - 1;
         do {
             odometer[dim]++;
-            src += strides[dim] * src_elsize;
+            src = (const char *)src + strides[dim] * src_elsize;
 
             if (odometer[dim] < origin[dim] + shape[dim])
                 break;
@@ -1832,7 +1833,7 @@ static inline asdf_ndarray_err_t asdf_ndarray_read_tile_main_loop(
 
             odometer[dim] = origin[dim];
             // Back up
-            src -= shape[dim] * strides[dim] * src_elsize;
+            src = (const char *)src - shape[dim] * strides[dim] * src_elsize;
         } while (dim-- > 0);
     }
 
@@ -1969,7 +1970,7 @@ asdf_ndarray_err_t asdf_ndarray_read_tile_ndim(
 
     // Special case if the "tile" is one-dimensional, C-contiguous
     if (is_1d) {
-        const void *src = data + offset;
+        const void *src = (const char *)data + offset;
         // If convert() returns non-zero it means an overflow occurred
         // while copying; this does not necessarily have to be treated as an error depending
         // on the application.
@@ -1987,7 +1988,7 @@ asdf_ndarray_err_t asdf_ndarray_read_tile_ndim(
     }
 
     memcpy(odometer, origin, sizeof(uint64_t) * inner_dim);
-    const void *src = data + offset;
+    const void *src = (const char *)data + offset;
 
     err = asdf_ndarray_read_tile_main_loop(
         tile, dst_elsize, src, src_elsize, shape, strides, origin, odometer, ndim, convert);

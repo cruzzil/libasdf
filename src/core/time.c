@@ -546,7 +546,11 @@ static int asdf_time_parse_decimalyear(asdf_time_t *time) {
 }
 
 #else
+#if defined(_MSC_VER)
+#pragma message("strptime() not available, times will not be parsed")
+#else
 #warning "strptime() not available, times will not be parsed"
+#endif
 static int asdf_time_parse_std(asdf_time_t *time) {
     if (time) {
         time->info.ts.tv_sec = 0;

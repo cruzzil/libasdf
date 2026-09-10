@@ -37,15 +37,31 @@ typedef int64_t ssize_t;
 #define SSIZE_MAX INT64_MAX
 #endif
 
-/* <unistd.h>: the CRT has these under underscored names in <io.h>. */
-#define read _read
-#define write _write
-#define close _close
-#define lseek _lseeki64
-#define access _access
-#define unlink _unlink
-#define ftruncate _chsize_s
-#define isatty _isatty
+/*
+ * <unistd.h>: the CRT has these under underscored names in <io.h>.
+ *
+ * Wrappers rather than object-like macros, deliberately. `#define read _read`
+ * rewrites every `read` token in every translation unit that sees it, and one
+ * of them is the `read` attribute in `#pragma section(".CRT$XCU", read)` --
+ * which silently became `_read`, so the section was never declared and every
+ * constructor failed with C2341.
+ */
+static inline int asdf_posix_read_(int fd, void *buf, unsigned int n) {
+    return _read(fd, buf, n);
+}
+
+static inline int asdf_posix_write_(int fd, const void *buf, unsigned int n) {
+    return _write(fd, buf, n);
+}
+
+#define read(fd, buf, n) asdf_posix_read_((fd), (buf), (unsigned int)(n))
+#define write(fd, buf, n) asdf_posix_write_((fd), (buf), (unsigned int)(n))
+#define close(fd) _close(fd)
+#define lseek(fd, off, whence) _lseeki64((fd), (off), (whence))
+#define access(path, mode) _access((path), (mode))
+#define unlink(path) _unlink(path)
+#define ftruncate(fd, len) _chsize_s((fd), (len))
+#define isatty(fd) _isatty(fd)
 
 #define _SC_PAGESIZE 1
 #define _SC_PAGE_SIZE _SC_PAGESIZE
