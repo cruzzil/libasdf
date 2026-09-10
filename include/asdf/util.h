@@ -40,7 +40,7 @@
 
 #include <stdlib.h> /* atexit */
 
-#pragma section(".CRT$XCU", read)
+#pragma section(".CRT$XCU", long, read)
 
 /*
  * The indirection is what makes these usable on a name that is itself a

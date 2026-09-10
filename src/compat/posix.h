@@ -33,6 +33,10 @@
 typedef int64_t ssize_t;
 #endif
 
+#if !defined(SSIZE_MAX)
+#define SSIZE_MAX INT64_MAX
+#endif
+
 /* <unistd.h>: the CRT has these under underscored names in <io.h>. */
 #define read _read
 #define write _write

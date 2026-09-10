@@ -31,6 +31,40 @@
 #include <sys/endian.h>
 #endif
 
+/*
+ * Windows is always little-endian on the targets MSVC supports, and the CRT
+ * spells the swaps `_byteswap_*`.  Defined before the fallbacks below so their
+ * HAVE_DECL_* tests see them.
+ */
+#if defined(_WIN32)
+#include <stdlib.h>
+#if !defined(be16toh)
+#define be16toh(x) _byteswap_ushort(x)
+#define be32toh(x) _byteswap_ulong(x)
+#define be64toh(x) _byteswap_uint64(x)
+#define htobe16(x) _byteswap_ushort(x)
+#define htobe32(x) _byteswap_ulong(x)
+#define htobe64(x) _byteswap_uint64(x)
+#define le16toh(x) (x)
+#define le32toh(x) (x)
+#define le64toh(x) (x)
+#define htole16(x) (x)
+#define htole32(x) (x)
+#define htole64(x) (x)
+#endif
+#undef HAVE_DECL_BE64TOH
+#undef HAVE_DECL_BE32TOH
+#undef HAVE_DECL_HTOBE16
+#undef HAVE_DECL_HTOBE32
+#undef HAVE_DECL_HTOBE64
+#define HAVE_DECL_BE64TOH 1
+#define HAVE_DECL_BE32TOH 1
+#define HAVE_DECL_HTOBE16 1
+#define HAVE_DECL_HTOBE32 1
+#define HAVE_DECL_HTOBE64 1
+#endif /* _WIN32 */
+
+
 #if !HAVE_DECL_BE64TOH
 #if (defined(__APPLE__) && !defined(be64toh))
 #include <libkern/OSByteOrder.h>
