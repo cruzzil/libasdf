@@ -206,7 +206,25 @@ else()
 endif()
 
 
-# argp is only needed by the command-line tool
+# argp is only needed by the command-line tool.
+#
+# Everywhere but Apple this assumed glibc's argp is simply there, which is
+# true of Linux and false of Windows -- where the tool then failed deep in the
+# compile on a missing <argp.h> rather than saying so. Probe for it, and turn
+# the tool off with a message when it is absent. Apple is left to the block
+# below, which knows how to find argp-standalone.
+if(ENABLE_TOOL AND NOT APPLE)
+    check_include_file(argp.h HAVE_ARGP_H)
+
+    if(NOT HAVE_ARGP_H)
+        message(STATUS
+            "argp.h not found; it is a GNU extension with no Windows port. "
+            "The command-line tool needs it, so ENABLE_TOOL is off. The "
+            "library itself is unaffected.")
+        set(ENABLE_TOOL OFF CACHE BOOL "Build the asdf command-line tool" FORCE)
+    endif()
+endif()
+
 if(ENABLE_TOOL AND APPLE)
     option(ARGP_NO_PKGCONFIG NO)
     if(ARGP_NO_PKGCONFIG)
