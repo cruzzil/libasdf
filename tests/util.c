@@ -2,19 +2,18 @@
  * Utilities for unit tests
  */
 
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
+#include <asdf/util.h> /* ASDF_CONSTRUCTOR */
+
+#include "compat.h"
 #include "config.h"
 #ifdef HAVE_STATGRAB
 #include <statgrab.h>
@@ -66,7 +65,7 @@ static void ensure_tmp_dir(void) {
     struct stat st;
 
     if (stat(TEMP_DIR, &st) == -1)
-        mkdir(TEMP_DIR, 0777);
+        asdf_test_mkdir(TEMP_DIR);
 }
 
 
@@ -119,7 +118,7 @@ static void clean_stale_pgid_files(void) {
         if (sscanf(ent->d_name, PGID_FILE_TEMPLATE, &pgid) != 1 || pgid <= 0)
             continue;
 
-        if (kill(-(pid_t)pgid, 0) == -1 && errno == ESRCH) {
+        if (!asdf_test_group_alive(pgid)) {
             char path[PATH_MAX];
             snprintf(path, sizeof(path), TEMP_DIR "/%s", ent->d_name);
             unlink(path);
@@ -268,7 +267,7 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
                          TEMP_DIR "/" TEST_SERIAL_FMT, run_num);
         if (n < 0 || n >= (int)sizeof(run_dir_storage))
             break;
-        if (mkdir(run_dir_storage, 0777) == 0) {
+        if (asdf_test_mkdir(run_dir_storage) == 0) {
             /* Use a larger buffer to avoid format-truncation: run_num is
              * bounded by TEST_SERIAL_MAX (1000000) so the output is always
              * TEST_SERIAL_LEN digits, but GCC sees the full int range. */
@@ -281,7 +280,7 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
             char latest[PATH_MAX];
             snprintf(latest, sizeof(latest), TEMP_DIR "/latest");
             unlink(latest);
-            int rc = symlink(serial_str, latest);  /* best-effort */
+            int rc = asdf_test_symlink(serial_str, latest);  /* best-effort */
             (void)rc;
             return;
         }
@@ -300,12 +299,11 @@ failure:
 #define CLAIM_RUN_ATTEMPTS 3
 
 
-__attribute__((constructor))
-static void init_run_dir(void) {
+ASDF_CONSTRUCTOR(init_run_dir) {
     ensure_tmp_dir();
     clean_stale_pgid_files();
 
-    pid_t pgid = getpgrp();
+    int pgid = asdf_test_group_id();
     char pgid_file[PATH_MAX];
     snprintf(pgid_file, sizeof(pgid_file), TEMP_DIR "/" PGID_FILE_TEMPLATE, (int)pgid);
 

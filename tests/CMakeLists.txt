@@ -211,7 +211,7 @@ if (ENABLE_TESTING_CPP)
         message(FATAL_ERROR "C++ compiler required for ENABLE_TESTING_CPP but none found")
     endif()
 
-    set(GENERATE_CPP_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_test_cpp_headers.sh)
+    set(GENERATE_CPP_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_test_cpp_headers.cmake)
     set(CPP_HEADER_TEST ${CTEST_BINARY_DIRECTORY}/test-cpp-headers.cpp)
     file(GLOB ASDF_PUBLIC_HEADERS
         ${CMAKE_SOURCE_DIR}/include/asdf/*.h
@@ -220,7 +220,11 @@ if (ENABLE_TESTING_CPP)
 
     add_custom_command(
         OUTPUT ${CPP_HEADER_TEST}
-        COMMAND ${GENERATE_CPP_HEADERS} ${CMAKE_SOURCE_DIR}/include ${CPP_HEADER_TEST} ${ASDF_PUBLIC_HEADERS}
+        COMMAND ${CMAKE_COMMAND}
+            -DINC_DIR=${CMAKE_SOURCE_DIR}/include
+            -DOUT=${CPP_HEADER_TEST}
+            "-DHEADERS=${ASDF_PUBLIC_HEADERS}"
+            -P ${GENERATE_CPP_HEADERS}
         DEPENDS ${ASDF_PUBLIC_HEADERS} ${GENERATE_CPP_HEADERS}
         COMMENT "Generating C++ header test file"
         VERBATIM
