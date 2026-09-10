@@ -42,8 +42,9 @@ static inline int asdf_test_group_alive(int group) {
 #include <string.h>
 
 #define WIN32_LEAN_AND_MEAN
-#include <tlhelp32.h>
 #include <windows.h>
+/* After windows.h, not before: tlhelp32.h uses its types and does not include it. */
+#include <tlhelp32.h>
 
 #if !defined(PATH_MAX)
 #define PATH_MAX _MAX_PATH
