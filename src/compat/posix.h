@@ -46,6 +46,7 @@ static inline int asdf_mkstemp(char *template_) {
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -89,6 +90,11 @@ static inline int asdf_read_fd(int fd, void *buf, size_t n) {
 
 static inline int asdf_write_fd(int fd, const void *buf, size_t n) {
     return _write(fd, buf, (unsigned int)n);
+}
+
+/* The CRT spells it _mkgmtime. */
+static inline time_t timegm(struct tm *tm) {
+    return _mkgmtime(tm);
 }
 
 /* <strings.h> */

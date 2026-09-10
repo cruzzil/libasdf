@@ -6,6 +6,8 @@
 
 #include <libfyaml.h>
 
+#include "compat/posix.h"
+
 #include "compression/compression.h"
 #include "context.h"
 #include "emitter.h"

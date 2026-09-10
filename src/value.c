@@ -16,6 +16,8 @@
 
 #include <libfyaml.h>
 
+#include "compat/posix.h"
+
 #include "error.h"
 #include "file.h"
 #include "log.h"

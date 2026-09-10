@@ -8,6 +8,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "../compat/posix.h"
+
 #include "stc/cregex.h"
 
 #include "./asdf.h"

@@ -10,6 +10,8 @@
 
 #include <libfyaml.h>
 
+#include "compat/posix.h"
+
 #include "event.h"
 #include "file.h"
 #include "util.h"
