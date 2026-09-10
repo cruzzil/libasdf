@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <asdf/util.h> /* ASDF_CONSTRUCTOR */
+
 #include "compat.h"
 
 #include "munit.h"
@@ -295,7 +297,7 @@ static MunitParameterEnum reference_file_params[] = {
 };
 
 
-__attribute__((constructor)) static void collect_reference_files(void) {
+ASDF_CONSTRUCTOR(collect_reference_files) {
     char **versions = list_dir(REFERENCE_FILES_DIR, is_version_dir);
 
     if (!versions)

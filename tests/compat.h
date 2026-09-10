@@ -202,6 +202,12 @@ typedef long long ssize_t;
 
 /* Guarded: src/compat/posix.h and tests/compat.h both supply it, and a
  * translation unit can see both. */
+/* The CRT has the _S_IF* bits but not the POSIX test macros. */
+#if !defined(S_ISREG)
+#define S_ISREG(mode) (((mode) & _S_IFMT) == _S_IFREG)
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#endif
+
 /* memmem is a GNU extension. */
 static inline void *memmem(
     const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
