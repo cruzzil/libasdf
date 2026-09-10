@@ -179,10 +179,23 @@ typedef long long ssize_t;
 #define mkdir(path, mode) _mkdir(path)
 
 /*
- * Symlinks need a privilege the runner does not grant by default, and the
- * caller treats this as best-effort, so report failure rather than pretend.
+ * Symlinks need a privilege Windows does not grant by default, and the caller
+ * treats this as best-effort, so report failure rather than pretend. readlink
+ * follows: with nothing written, there is nothing to read back.
  */
 #define asdf_test_symlink(target, link) (-1)
+
+static inline ssize_t readlink(const char *path, char *buf, size_t len) {
+    (void)path;
+    (void)buf;
+    (void)len;
+    return -1;
+}
+
+static inline void usleep(unsigned int microseconds) {
+    /* Sleep takes milliseconds, and rounds up so a sub-ms wait still yields. */
+    Sleep((DWORD)((microseconds + 999) / 1000));
+}
 
 #define unlink(path) _unlink(path)
 #define open _open
