@@ -57,8 +57,22 @@ function(asdf_test_msvc_flags target)
     endif()
 endfunction()
 
+# munit gets __PGI but deliberately NOT /experimental:c11atomics.
+#
+# It picks its atomics on `__STDC_VERSION__ >= C11 && !__STDC_NO_ATOMICS__`.
+# With the experimental flag MSVC drops __STDC_NO_ATOMICS__, so munit takes
+# the <stdatomic.h> path and initialises its RNG state with ATOMIC_VAR_INIT,
+# which MSVC rejects as a non-constant initialiser. Without it, munit falls to
+# its own _WIN32 branch -- volatile LONG and the Interlocked functions -- which
+# is the path it was written to use there. It needs no atomics from us.
+function(asdf_munit_msvc_flags target)
+    if(MSVC)
+        target_compile_definitions(${target} PRIVATE __PGI)
+    endif()
+endfunction()
+
 add_library(munit ${MUNIT_DIR}/munit.c)
-asdf_test_msvc_flags(munit)
+asdf_munit_msvc_flags(munit)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(munit PRIVATE MUNIT_NO_FORK)
