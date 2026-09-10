@@ -581,7 +581,7 @@ DEFINE_CLAMP_CONVERSION(float64, double, uint64, uint64_t, 0, UINT64_MAX)
     FOR_NUMERIC_TYPES_EXPAND(REGISTER_CONVERSION_FOR_PAIR, src_enum, src_name)
 
 
-ASDF_CONSTRUCTOR static void asdf_conversion_table_init() {
+ASDF_CONSTRUCTOR(asdf_conversion_table_init) {
     if (atomic_load_explicit(&conversion_table_initialized, memory_order_acquire))
         return;
 

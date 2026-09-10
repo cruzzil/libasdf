@@ -414,8 +414,8 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
     ASDF_EXT_DEFINE_COPY_INTO(extname, type) \
     ASDF_EXT_DEFINE_COPY(extname, type) \
     ASDF_EXT_DEFINE_ARRAY_COPY(extname, type) \
-    static ASDF_CONSTRUCTOR void ASDF_EXPAND( \
-        ASDF_EXT_PREFIX, _register_##extname##_extension)(void) { \
+    ASDF_CONSTRUCTOR(ASDF_EXPAND( \
+        ASDF_EXT_PREFIX, _register_##extname##_extension)) { \
         asdf_extension_register(&ASDF_EXT_STATIC_NAME(extname)); \
     }
 
