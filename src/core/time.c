@@ -112,23 +112,12 @@ ASDF_DESTRUCTOR(drop_time_auto_regexes) {
     }
 }
 
-#ifdef HAVE_STRPTIME
-static const char *ASDF_TIME_SFMT_ISO[] = {"%Y-%m-%d %H:%M:%S", "%Y-%m-%d"};
-static const char *ASDF_TIME_SFMT_YDAY[] = {"%Y:%j:%H:%M:%S", "%Y:%j"};
-static const char *ASDF_TIME_SFMT_UNIX[] = {"%s"};
-
-#define check_format_strptime(TYPE, BUF, TM, HAS_TIME, STATUS) \
-    { \
-        size_t idx = 0; \
-        do { \
-            (STATUS) = strptime((BUF), (TYPE)[idx], (TM)); \
-            if ((STATUS)) { \
-                (HAS_TIME) = true; \
-                break; \
-            } \
-        } while (idx++ && idx < ARRAY_SIZE(TYPE)); \
-    }
-
+/*
+ * These are used by the format dispatch below, which is outside the
+ * HAVE_STRPTIME block -- so they have to be defined outside it too.  They
+ * were inside it, which meant any platform without strptime failed to
+ * compile rather than falling back.  No CI platform lacks it; Windows does.
+ */
 #define JD_B1900 2415020.31352
 #define JD_MJD 2400000.5
 #define JD_J2000 2451545.0
@@ -174,6 +163,23 @@ static const int SECONDS_PER_DAY = 86400;
 static const int SECONDS_PER_HOUR = 3600;
 static const int SECONDS_PER_MINUTE = 60;
 
+
+#ifdef HAVE_STRPTIME
+static const char *ASDF_TIME_SFMT_ISO[] = {"%Y-%m-%d %H:%M:%S", "%Y-%m-%d"};
+static const char *ASDF_TIME_SFMT_YDAY[] = {"%Y:%j:%H:%M:%S", "%Y:%j"};
+static const char *ASDF_TIME_SFMT_UNIX[] = {"%s"};
+
+#define check_format_strptime(TYPE, BUF, TM, HAS_TIME, STATUS) \
+    { \
+        size_t idx = 0; \
+        do { \
+            (STATUS) = strptime((BUF), (TYPE)[idx], (TM)); \
+            if ((STATUS)) { \
+                (HAS_TIME) = true; \
+                break; \
+            } \
+        } while (idx++ && idx < ARRAY_SIZE(TYPE)); \
+    }
 
 /* Julian Date to Gregorian calendar conversion */
 static void julian_to_tm(const double jd, struct tm *t, time_t *nanoseconds) {
