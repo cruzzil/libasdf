@@ -40,7 +40,7 @@
 
 #include <stdlib.h> /* atexit */
 
-#pragma section(".CRT$XCU", long, read)
+#pragma section(".CRT$XCU", read)
 
 /*
  * The indirection is what makes these usable on a name that is itself a
@@ -65,6 +65,7 @@
 
 #define ASDF__CONSTRUCTOR_I(f) \
     static void f(void); \
+    __pragma(section(".CRT$XCU", read)) \
     __declspec(allocate(".CRT$XCU")) void (*f##_asdf_ctor)(void) = f; \
     __pragma(comment(linker, ASDF__CTOR_INCLUDE(f))) \
     static void f(void)
