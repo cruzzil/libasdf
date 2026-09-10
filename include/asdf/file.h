@@ -138,10 +138,16 @@ typedef struct {
 } asdf_config_t;
 
 
-// Forward-declarations for asdf_open_ex and so on
-asdf_file_t *asdf_open_file_ex(const char *filename, const char *mode, asdf_config_t *config);
-asdf_file_t *asdf_open_fp_ex(FILE *fp, const char *filename, asdf_config_t *config);
-asdf_file_t *asdf_open_mem_ex(const void *buf, size_t size, asdf_config_t *config);
+// Forward-declarations for asdf_open_ex and so on.
+//
+// These carry ASDF_EXPORT because their real declarations below do: on MSVC
+// it expands to __declspec(dllimport)/(dllexport), and a declaration that
+// omits it is a redefinition with different linkage (C2375) rather than a
+// compatible one.
+ASDF_EXPORT asdf_file_t *asdf_open_file_ex(
+    const char *filename, const char *mode, asdf_config_t *config);
+ASDF_EXPORT asdf_file_t *asdf_open_fp_ex(FILE *fp, const char *filename, asdf_config_t *config);
+ASDF_EXPORT asdf_file_t *asdf_open_mem_ex(const void *buf, size_t size, asdf_config_t *config);
 static asdf_file_t *asdf_open_file(const char *filename, const char *mode);
 static asdf_file_t *asdf_open_fp(FILE *fp, const char *filename);
 static asdf_file_t *asdf_open_mem(const void *buf, size_t size);
