@@ -155,6 +155,8 @@ jobs:
     name: 'Windows (MSVC) -- exploratory'
     runs-on: windows-latest
     continue-on-error: true
+    # A hung test held a runner for a day before this was here.
+    timeout-minutes: 45
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -385,13 +387,29 @@ jobs:
         smoke.exe
         echo ---- smoke exit %errorlevel%
 
+    # A crash on Windows pops a Windows Error Reporting dialog by default and
+    # then waits for a click that will never come, which is what hung the
+    # first attempt. Turn that off, and cap each test as well.
+    - name: Silence the crash dialogs
+      shell: pwsh
+      continue-on-error: true
+      run: |
+        $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+        New-ItemProperty -Path $k -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -Path $k -Name Disabled  -Value 1 -PropertyType DWord -Force | Out-Null
+        Write-Host "WER dialogs disabled"
+
     - name: Run the test suite
       shell: bash
+      timeout-minutes: 15
       continue-on-error: true
       run: |
         set +e
         export PATH="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin:$PATH"
-        cd build && ctest -C ${{ env.BUILD_TYPE }} --output-on-failure 2>&1 | tail -45
+        cd build
+        ctest -C ${{ env.BUILD_TYPE }} --timeout 60 --output-on-failure > ctest.log 2>&1
+        echo "=== ctest exit: $?"
+        tail -60 ctest.log
 
     - name: Did the library actually come out?
       shell: bash
