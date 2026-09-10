@@ -18,16 +18,28 @@
 #include "ndarray.h"
 #include "ndarray_convert.h"
 
+/* MSVC has no __builtin_bswap; the CRT spells them _byteswap_*. */
+#if defined(_MSC_VER)
+#include <stdlib.h>
+#define ASDF_BSWAP16(x) _byteswap_ushort(x)
+#define ASDF_BSWAP32(x) _byteswap_ulong(x)
+#define ASDF_BSWAP64(x) _byteswap_uint64(x)
+#else
+#define ASDF_BSWAP16(x) __builtin_bswap16(x)
+#define ASDF_BSWAP32(x) __builtin_bswap32(x)
+#define ASDF_BSWAP64(x) __builtin_bswap64(x)
+#endif
+
 
 // NOLINTBEGIN(readability-identifier-length)
 static inline uint16_t bswap_uint16_t(uint16_t x) {
-    return __builtin_bswap16(x);
+    return ASDF_BSWAP16(x);
 }
 static inline uint32_t bswap_uint32_t(uint32_t x) {
-    return __builtin_bswap32(x);
+    return ASDF_BSWAP32(x);
 }
 static inline uint64_t bswap_uint64_t(uint64_t x) {
-    return __builtin_bswap64(x);
+    return ASDF_BSWAP64(x);
 }
 
 #ifdef HAVE_FLOAT16
