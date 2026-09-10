@@ -316,8 +316,8 @@ TESTS += test-symbol-leakage.sh
 # Test headers on C++
 cpp_header_test = $(builddir)/test-cpp-headers.cpp
 # Generate the C++ header test file
-$(cpp_header_test): $(asdf_public_headers) $(srcdir)/scripts/generate_test_cpp_headers.sh
-	$(AM_V_at)$(srcdir)/scripts/generate_test_cpp_headers.sh \
+$(cpp_header_test): $(asdf_public_headers) $(srcdir)/scripts/generate_test_cpp_headers.py
+	$(AM_V_at)$(PYTHON3) $(srcdir)/scripts/generate_test_cpp_headers.py \
 	    $(top_srcdir)/include $@ $(asdf_public_headers) \
 	    $(QUIET_OUT)
 
@@ -442,7 +442,7 @@ EXTRA_DIST += \
     munit/munit.h \
     munit.h \
     scripts/extract_doc_examples.py \
-    scripts/generate_test_cpp_headers.sh \
+    scripts/generate_test_cpp_headers.py \
     shell-test.sh \
     test-symbol-leakage.sh \
     util.h \
