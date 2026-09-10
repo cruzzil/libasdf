@@ -1,100 +1,98 @@
-# What stands between libasdf and a Windows (MSVC) build
+# libasdf on Windows (MSVC)
 
-From the exploratory `windows` job in `.github/workflows/cmake.yml`, run on
-`windows-latest` with MSVC 19.51 and vcpkg. **Not for upstream as-is** — the
-job exists to answer the question, not to gate anything.
-
-## Correction
-
-An earlier version of this file said libfyaml had no Windows support and was a
-hard blocker. **That was wrong.** The grep behind it looked only at
-`src/` and `include/` and missed everything: libfyaml ships
-`doc/windows-support.txt`, a `cmake/clang-windows-toolchain.cmake`, and a
-`CMakeLists.txt` that branches on `WIN32`/`MSVC` throughout.
-
-Vendored and built from source with MSVC, **libfyaml configures and compiles
-clean** — configure exit 0, build exit 0, headers and `.lib` installed. With it
-in place plus zlib/bzip2/lz4 from vcpkg, **libasdf itself now configures
-successfully on Windows.**
+From the exploratory `windows` job in `.github/workflows/cmake.yml`
+(`workflow_dispatch`, `windows-latest`, MSVC 19.51, vcpkg). **Private branch,
+not for upstream.**
 
 ## Where it stands
 
+Configure **succeeds**. Of 33 files in `src/`, all but a handful compile.
+
 | | |
 |---|---|
-| libfyaml, vendored + MSVC | **builds clean** |
-| zlib 1.3.2, bzip2 1.0.8, lz4 1.10.0 | found via vcpkg + `pkg-config` |
-| libasdf configure | **succeeds** |
-| libasdf compile | most of `src/` compiles; stops on the two below |
+| libfyaml, vendored + built with MSVC | clean |
+| zlib 1.3.2, bzip2 1.0.8, lz4 1.10.0 | vcpkg + `pkg-config` |
+| libasdf configure | succeeds |
+| libasdf compile | 5 files left, listed below |
 
-## What is actually left
+An earlier version of this file claimed libfyaml had no Windows support and
+was a hard blocker. **That was wrong** — the grep behind it looked only at
+`src/` and `include/`. libfyaml ships `doc/windows-support.txt`, a
+`clang-windows-toolchain.cmake`, and a `CMakeLists.txt` that branches on
+`WIN32`/`MSVC` throughout, and it builds clean as a vendored subproject.
 
-**1. `ASDF_CONSTRUCTOR` — `include/asdf/util.h`**
+## What is left
 
-```c
-/* AFAIK this should be supported on virtually any target/compiler */
-#define ASDF_CONSTRUCTOR __attribute__((constructor))
-```
+**1. `read` / `write` / `close` — the interesting one**
 
-MSVC has no `__attribute__`. `src/value_util.c` uses it for
-`asdf_common_tag_map_create`/`_destroy` and produces 12 errors. The MSVC
-equivalent is a function pointer in `.CRT$XCU` (and `.CRT$XPU` for the
-destructor), which the CRT walks before `main` — see `shim.c` in libasdf-rs
-for a working spelling. Note the pointer must have **external** linkage or
-`/include:` cannot resolve it.
+`asdf_stream` has members of those names, so they cannot be macro-shimmed:
+any macro fires on `stream->close(stream)`. `#define read _read` also
+rewrote the `read` attribute inside `#pragma section(".CRT$XCU", read)`,
+which is what made every constructor fail with C2341 for several rounds.
 
-**2. `<sys/time.h>` — `include/asdf/core/time.h`**
+The fd call sites need a neutral spelling (`asdf_read` and friends, resolved
+per platform). That is a source change, not a shim, and it is the next piece
+of real work.
 
-Filed as asdf-format/libasdf#261. The header needs only `struct timespec`,
-which the `<time.h>` on the next line already provides.
+**2. Non-constant static initializers** — `file.c:32`, `emitter.c:23`
 
-Both are in *public* headers, so they bite anyone vendoring them, not just a
-Windows build of libasdf.
+`asdf_config_default` and `asdf_emitter_cfg_default` are `static const`
+aggregates whose initializers MSVC rejects (C2099, C2078). Needs a look at
+what is non-constant in them.
 
-## Still ahead, not yet reached
+**3. `core/time.c` `JD_*_EPOCH` undeclared** (6 sites)
 
-The build stops before these, so they are from reading the source, not from
-the compiler:
+Almost certainly behind a `HAVE_*` that is off on this platform.
 
-- `sys/mman.h` — `block.c`, `file.c`, `stream.c`, `core/ndarray.c`,
-  `compression/compression.c`. Needs `CreateFileMapping`/`MapViewOfFile` or a
-  read-into-buffer fallback. `mmap`/`munmap` appear 18 times.
-- `unistd.h` — `file.c`, `parser.c`, `stream.h`, `compression.c`.
-- The threaded compression path in `compression.c`: `pthread.h`,
-  `sys/eventfd.h`, `sys/syscall.h`, `sys/poll.h`, `sys/ioctl.h`. Largest
-  single piece.
-- `ssize_t` (9 sites). MSVC has **no** `ssize_t` at all, under any include —
-  confirmed directly. `off_t` it does have, behind `<sys/types.h>`.
-- `strndup` (12), `timegm` (10), `strptime` (4), `asprintf` (4), `mkstemp`,
-  `ftruncate`.
-- `argp.h` — `main.c` only, so the CLI can come last.
+**4. `compression/compression.c`** — still the largest piece
 
-## Fixed on this branch to get this far
+`sys/mman.h` plus `pthread.h`, `sys/eventfd.h`, `sys/syscall.h`,
+`sys/poll.h`, `sys/ioctl.h`. The asynchronous decompression path wants a
+design (a Windows thread pool, or a serial fallback), not a shim. Left with
+its own POSIX includes on purpose.
 
-- **`-DUSE_STATGRAB=OFF` did nothing.** The option was declared but never
-  consulted, so `pkg_check_modules(STATGRAB libstatgrab REQUIRED)` ran anyway
-  and configure died on any platform without libstatgrab. The code already
-  treats it as optional — `HAVE_STATGRAB` follows `STATGRAB_FOUND`. Worth
-  sending upstream on its own; it is not Windows-specific.
-- **`<sys/types.h>` was missing** wherever `off_t`/`ssize_t` are used (13
-  files). glibc supplies them transitively, which hides it. On MSVC nothing
-  does, so STC's `i_type asdf_block_index, off_t` expanded with an unknown
-  type and `vec.h` produced a hundred syntax errors that looked like an STC
-  problem and were not. STC compiles fine under MSVC on its own, with either
-  preprocessor.
+**5. The CLI** — `main.c` needs an `argp` replacement. Last.
 
-Both verified on Linux: builds clean, 22/22 tests.
+## Done on this branch
+
+- **`src/compat/posix.h`** — `<unistd.h>`/`<sys/mman.h>` stand-in. Read-only
+  file mapping via `CreateFileMapping`/`MapViewOfFile`; `munmap` asks
+  `VirtualQuery` whether it holds a view or an anonymous allocation, since
+  the caller does not say and the two are released differently. `ssize_t` and
+  `SSIZE_MAX` live here too — MSVC has neither, under any include.
+- **`ASDF_CONSTRUCTOR`/`ASDF_DESTRUCTOR`** now take the function name and
+  stand in for the whole declarator, so one spelling covers
+  `__attribute__((constructor))` and MSVC's `.CRT$XCU`. The extra macro
+  indirection is needed because `ASDF_REGISTER_EXTENSION` passes a name that
+  is itself an expansion. Destructors go through `atexit`.
+- **`UNUSED(x)`** — its non-GCC expansion was `(void)(x)`, a syntax error in
+  the parameter position it is used in.
+- **`<sys/types.h>`** added wherever `off_t`/`ssize_t` are used (13 files).
+  glibc supplies them transitively, which hid it; on MSVC the undefined
+  `off_t` made STC's `i_type asdf_block_index, off_t` expand with an unknown
+  type and produce a hundred `vec.h` errors that looked like an STC problem.
+- **`compat/endian.h`** gained a Windows branch (`_byteswap_*`).
+- **`void *` arithmetic** replaced with `char *` in `stream.c`, `util.c`,
+  `core/ndarray.c` — a GCC extension MSVC does not have.
+- **The VLA in `parse_util.c`** is now a fixed array sized by `ASDF_LAST_TOK`,
+  which already bounds it. Heap was the obvious first move and the wrong one:
+  `test-malloc-fail` injects failure at a counted allocation, so two more
+  `calloc`s shifted the count and broke it.
+- **`-DUSE_STATGRAB=OFF`** now works — sent upstream separately as
+  asdf-format/libasdf#262 / #263, since it is not Windows-specific.
+- **`<sys/time.h>`** dropped from `core/time.h` — asdf-format/libasdf#261.
+
+Every one of these is verified on Linux: builds clean, 22/22 tests.
 
 ## Dead ends, recorded so they are not re-run
 
-- `/Zc:preprocessor` makes no difference. STC's macros are fine under MSVC's
-  traditional preprocessor; the problem was the undefined `off_t`.
+- `/Zc:preprocessor` changes nothing. STC compiles under MSVC's traditional
+  preprocessor either way; the problem was the undefined `off_t`.
+- `#pragma section(".CRT$XCU", long, read)` — `long` is not a valid attribute.
 - MSVC does need `/experimental:c11atomics` for C11 `<stdatomic.h>`
   (`src/error.c` hits it first).
 - `cmake/ASDFConfig.cmake` adds `-fvisibility=hidden` and
-  `-fmacro-prefix-map=` unconditionally; they reach `cl` as-is and should be
-  guarded.
-
-## Reproducing
-
-The `windows` job runs on `workflow_dispatch`. Every step continues on error
-so one run reports the whole list.
+  `-fmacro-prefix-map=` unconditionally; they reach `cl` as-is.
+- A `tee | tail` in the CI build step let `bash -e -o pipefail` kill the step
+  before it classified anything, so several rounds were read from the last 20
+  lines of the log rather than the whole of it. Capture to a file first.

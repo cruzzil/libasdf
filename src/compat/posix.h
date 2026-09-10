@@ -40,23 +40,13 @@ typedef int64_t ssize_t;
 /*
  * <unistd.h>: the CRT has these under underscored names in <io.h>.
  *
- * Wrappers rather than object-like macros, deliberately. `#define read _read`
- * rewrites every `read` token in every translation unit that sees it, and one
- * of them is the `read` attribute in `#pragma section(".CRT$XCU", read)` --
- * which silently became `_read`, so the section was never declared and every
- * constructor failed with C2341.
+ * `read`, `write` and `close` are deliberately NOT shimmed. `asdf_stream` has
+ * members of those names, so any macro -- object- or function-like -- fires on
+ * `stream->close(stream)` and breaks it. `#define read _read` also rewrote the
+ * `read` attribute in `#pragma section(".CRT$XCU", read)`, which is what made
+ * every constructor fail with C2341. Their call sites need a neutral spelling
+ * instead, which is a source change rather than a shim.
  */
-static inline int asdf_posix_read_(int fd, void *buf, unsigned int n) {
-    return _read(fd, buf, n);
-}
-
-static inline int asdf_posix_write_(int fd, const void *buf, unsigned int n) {
-    return _write(fd, buf, n);
-}
-
-#define read(fd, buf, n) asdf_posix_read_((fd), (buf), (unsigned int)(n))
-#define write(fd, buf, n) asdf_posix_write_((fd), (buf), (unsigned int)(n))
-#define close(fd) _close(fd)
 #define lseek(fd, off, whence) _lseeki64((fd), (off), (whence))
 #define access(path, mode) _access((path), (mode))
 #define unlink(path) _unlink(path)
