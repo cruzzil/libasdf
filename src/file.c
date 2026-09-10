@@ -6,10 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
 
 #include <libfyaml.h>
+
+#include "compat/posix.h"
 
 #include "block.h"
 #include "compression/compression.h"

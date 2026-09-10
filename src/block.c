@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -17,6 +16,8 @@
 
 #if defined(HAVE_MD5) && defined(HAVE_MD5_H)
 #include <md5.h>
+
+#include "compat/posix.h"
 #endif
 
 #include "block.h"

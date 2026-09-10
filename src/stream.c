@@ -4,8 +4,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
+
+#include "compat/posix.h"
 
 #include "context.h"
 #include "error.h"
