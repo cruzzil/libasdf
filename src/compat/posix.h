@@ -105,6 +105,10 @@ static inline time_t timegm(struct tm *tm) {
 #define fseeko(fp, off, whence) _fseeki64((fp), (off), (whence))
 #define ftello(fp) _ftelli64(fp)
 
+/* Guarded: src/compat/posix.h and tests/compat.h both supply it, and a
+ * translation unit can see both. */
+#if !defined(ASDF_STRNDUP_SHIM)
+#define ASDF_STRNDUP_SHIM
 static inline char *strndup(const char *s, size_t n) {
     size_t len = strnlen(s, n);
     char *p = (char *)malloc(len + 1);
@@ -116,6 +120,7 @@ static inline char *strndup(const char *s, size_t n) {
     p[len] = '\0';
     return p;
 }
+#endif
 
 static inline int vasprintf(char **out, const char *fmt, va_list ap) {
     va_list ap2;

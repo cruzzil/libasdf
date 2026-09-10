@@ -17,12 +17,23 @@
 #define ASDF_EXPORT __declspec(dllimport)
 #endif
 #define ASDF_LOCAL
+/*
+ * For the functions ASDF_REGISTER_EXTENSION generates.
+ *
+ * Those are *defined* in the extension's own translation unit, not imported
+ * from libasdf, so they cannot carry dllimport -- MSVC rejects defining one
+ * (C2491). dllexport is what an extension built as a DLL wants, and is legal
+ * in a static library or an executable too.
+ */
+#define ASDF_EXT_EXPORT __declspec(dllexport)
 #elif defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 4)
 #define ASDF_EXPORT __attribute__((visibility("default")))
 #define ASDF_LOCAL __attribute__((visibility("hidden")))
+#define ASDF_EXT_EXPORT __attribute__((visibility("default")))
 #else
 #define ASDF_EXPORT
 #define ASDF_LOCAL
+#define ASDF_EXT_EXPORT
 #endif
 
 

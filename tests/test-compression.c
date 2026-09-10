@@ -10,7 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
+
+#include "compat.h"
 
 #include "asdf/core/ndarray.h"
 

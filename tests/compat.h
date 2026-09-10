@@ -189,6 +189,10 @@ typedef long long ssize_t;
  */
 #define asdf_test_symlink(target, link) (-1)
 
+/* Guarded: src/compat/posix.h and tests/compat.h both supply it, and a
+ * translation unit can see both. */
+#if !defined(ASDF_STRNDUP_SHIM)
+#define ASDF_STRNDUP_SHIM
 static inline char *strndup(const char *s, size_t n) {
     size_t len = strnlen(s, n);
     char *p = (char *)malloc(len + 1);
@@ -200,6 +204,7 @@ static inline char *strndup(const char *s, size_t n) {
     p[len] = '\0';
     return p;
 }
+#endif
 
 static inline ssize_t readlink(const char *path, char *buf, size_t len) {
     (void)path;

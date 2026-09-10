@@ -6,11 +6,12 @@
  * binary block carrying a checksum must have a valid one.  Values covered by
  * the exceptions below are skipped.
  */
-#include <dirent.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "compat.h"
 
 #include "munit.h"
 #include "util.h"

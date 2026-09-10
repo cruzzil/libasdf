@@ -7,11 +7,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <stc/cstr.h>
 
 #include <errno.h>
+
+#include "compat.h"
 
 #include "asdf/emitter.h"
 #include "asdf/error.h"

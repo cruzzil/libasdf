@@ -230,38 +230,38 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
 
 
 #define ASDF_EXT_DEFINE_VALUE_IS_TYPE(extname) \
-    ASDF_EXPORT bool asdf_value_is_##extname(asdf_value_t *value) { \
+    ASDF_EXT_EXPORT bool asdf_value_is_##extname(asdf_value_t *value) { \
         return asdf_value_is_extension_type(value, &ASDF_EXT_STATIC_NAME(extname)); \
     }
 
 
 #define ASDF_EXT_DEFINE_VALUE_AS_TYPE(extname, type) \
-    ASDF_EXPORT asdf_value_err_t asdf_value_as_##extname(asdf_value_t *value, type **out) { \
+    ASDF_EXT_EXPORT asdf_value_err_t asdf_value_as_##extname(asdf_value_t *value, type **out) { \
         return asdf_value_as_extension_type(value, &ASDF_EXT_STATIC_NAME(extname), (void **)out); \
     }
 
 
 #define ASDF_EXT_DEFINE_IS_TYPE(extname, type) \
-    ASDF_EXPORT bool asdf_is_##extname(asdf_file_t *file, const char *path) { \
+    ASDF_EXT_EXPORT bool asdf_is_##extname(asdf_file_t *file, const char *path) { \
         return asdf_is_extension_type(file, path, &ASDF_EXT_STATIC_NAME(extname)); \
     }
 
 
 #define ASDF_EXT_DEFINE_VALUE_OF_TYPE(extname, type) \
-    ASDF_EXPORT asdf_value_t *asdf_value_of_##extname(asdf_file_t *file, const type *obj) { \
+    ASDF_EXT_EXPORT asdf_value_t *asdf_value_of_##extname(asdf_file_t *file, const type *obj) { \
         return asdf_value_of_extension_type(file, obj, &ASDF_EXT_STATIC_NAME(extname)); \
     }
 
 
 #define ASDF_EXT_DEFINE_GET(extname, type) \
-    ASDF_EXPORT asdf_value_err_t asdf_get_##extname( \
+    ASDF_EXT_EXPORT asdf_value_err_t asdf_get_##extname( \
         asdf_file_t *file, const char *path, type **out) { \
         return asdf_get_extension_type(file, path, &ASDF_EXT_STATIC_NAME(extname), (void **)out); \
     }
 
 
 #define ASDF_EXT_DEFINE_SET(extname, type) \
-    ASDF_EXPORT asdf_value_err_t asdf_set_##extname( \
+    ASDF_EXT_EXPORT asdf_value_err_t asdf_set_##extname( \
         asdf_file_t *file, const char *path, const type *obj) { \
         return asdf_set_extension_type( \
             file, path, (const void *)obj, &ASDF_EXT_STATIC_NAME(extname)); \
@@ -275,7 +275,7 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
  * own storage; use for embedded, array-element, or static objects.
  */
 #define ASDF_EXT_DEFINE_DEINIT(extname, type) \
-    ASDF_EXPORT void asdf_##extname##_deinit(type *object) { \
+    ASDF_EXT_EXPORT void asdf_##extname##_deinit(type *object) { \
         if (!object) \
             return; \
         asdf_extension_t *ext = &ASDF_EXT_STATIC_NAME(extname); \
@@ -286,7 +286,7 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
 
 /* Auto-generated helper to de-initialize and free an extension type object */
 #define ASDF_EXT_DEFINE_DESTROY(extname, type) \
-    ASDF_EXPORT void asdf_##extname##_destroy(type *object) { \
+    ASDF_EXT_EXPORT void asdf_##extname##_destroy(type *object) { \
         if (!object) \
             return; \
         asdf_##extname##_deinit(object); \
@@ -304,7 +304,7 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
  * make sure to implement it if the extension object contains nested data.
  */
 #define ASDF_EXT_DEFINE_COPY_INTO(extname, type) \
-    ASDF_EXPORT bool asdf_##extname##_copy_into(asdf_file_t *file, const type *src, type *dst) { \
+    ASDF_EXT_EXPORT bool asdf_##extname##_copy_into(asdf_file_t *file, const type *src, type *dst) { \
         if (!src || !dst) \
             return false; \
         asdf_extension_t *ext = &ASDF_EXT_STATIC_NAME(extname); \
@@ -326,7 +326,7 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
  * Auto-generated helper to copy an extension type into freshly allocated storage
  */
 #define ASDF_EXT_DEFINE_COPY(extname, type) \
-    ASDF_EXPORT type *asdf_##extname##_copy(asdf_file_t *file, const type *src) { \
+    ASDF_EXT_EXPORT type *asdf_##extname##_copy(asdf_file_t *file, const type *src) { \
         if (!src) \
             return NULL; \
         type *copy = (type *)calloc(1, sizeof(type)); \
@@ -346,7 +346,7 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
  * For example, copies an `asdf_history_entry_t **` array.
  */
 #define ASDF_EXT_DEFINE_ARRAY_COPY(extname, type) \
-    ASDF_EXPORT type **asdf_##extname##_array_copy(asdf_file_t *file, const type **src) { \
+    ASDF_EXT_EXPORT type **asdf_##extname##_array_copy(asdf_file_t *file, const type **src) { \
         size_t nelem = 0; \
         while (src[nelem]) \
             nelem++; \
@@ -432,19 +432,19 @@ ASDF_EXPORT void asdf_tag_destroy(asdf_tag_t *tag);
  * :param type: The C type the extension deserializes to
  */
 #define ASDF_DECLARE_EXTENSION(extname, type) \
-    ASDF_EXPORT asdf_value_err_t asdf_value_as_##extname(asdf_value_t *value, type **out); \
-    ASDF_EXPORT bool asdf_value_is_##extname(asdf_value_t *value); \
-    ASDF_EXPORT asdf_value_t *asdf_value_of_##extname(asdf_file_t *file, const type *obj); \
-    ASDF_EXPORT bool asdf_is_##extname(asdf_file_t *file, const char *path); \
-    ASDF_EXPORT asdf_value_err_t asdf_get_##extname( \
+    ASDF_EXT_EXPORT asdf_value_err_t asdf_value_as_##extname(asdf_value_t *value, type **out); \
+    ASDF_EXT_EXPORT bool asdf_value_is_##extname(asdf_value_t *value); \
+    ASDF_EXT_EXPORT asdf_value_t *asdf_value_of_##extname(asdf_file_t *file, const type *obj); \
+    ASDF_EXT_EXPORT bool asdf_is_##extname(asdf_file_t *file, const char *path); \
+    ASDF_EXT_EXPORT asdf_value_err_t asdf_get_##extname( \
         asdf_file_t *file, const char *path, type **out); \
-    ASDF_EXPORT asdf_value_err_t asdf_set_##extname( \
+    ASDF_EXT_EXPORT asdf_value_err_t asdf_set_##extname( \
         asdf_file_t *file, const char *path, const type *obj); \
-    ASDF_EXPORT type *asdf_##extname##_copy(asdf_file_t *file, const type *src); \
-    ASDF_EXPORT bool asdf_##extname##_copy_into(asdf_file_t *file, const type *src, type *dst); \
-    ASDF_EXPORT type **asdf_##extname##_array_copy(asdf_file_t *file, const type **src); \
-    ASDF_EXPORT void asdf_##extname##_deinit(type *object); \
-    ASDF_EXPORT void asdf_##extname##_destroy(type *object)
+    ASDF_EXT_EXPORT type *asdf_##extname##_copy(asdf_file_t *file, const type *src); \
+    ASDF_EXT_EXPORT bool asdf_##extname##_copy_into(asdf_file_t *file, const type *src, type *dst); \
+    ASDF_EXT_EXPORT type **asdf_##extname##_array_copy(asdf_file_t *file, const type **src); \
+    ASDF_EXT_EXPORT void asdf_##extname##_deinit(type *object); \
+    ASDF_EXT_EXPORT void asdf_##extname##_destroy(type *object)
 
 ASDF_END_DECLS
 
