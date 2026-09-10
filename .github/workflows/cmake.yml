@@ -173,14 +173,19 @@ jobs:
       shell: pwsh
       continue-on-error: true
       run: |
-        vcpkg install zlib bzip2 lz4 --triplet x64-windows
-        choco install -y --no-progress pkgconfiglite
-        # Chocolatey's PATH change does not reach later steps on its own, and
-        # without pkg-config the configure silently skips every
-        # pkg_check_modules -- zlib, bzip2 and lz4 then go undetected and the
-        # build fails on their headers.
-        "C:\ProgramData\chocolatey\bin" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
-        & "C:\ProgramData\chocolatey\bin\pkg-config.exe" --version
+        vcpkg install zlib bzip2 lz4 pkgconf --triplet x64-windows
+        # pkg-config from vcpkg rather than Chocolatey: the pkgconfiglite
+        # package started installing "0/0 packages" and failing, and without a
+        # pkg-config the configure silently skips every pkg_check_modules --
+        # zlib, bzip2 and lz4 then go undetected and the build fails on their
+        # headers rather than saying anything.
+        $pkgconf = Get-ChildItem -Recurse "$env:VCPKG_INSTALLATION_ROOT\installed" `
+            -Filter 'pkgconf.exe' -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+        if (-not $pkgconf) { Write-Host "pkgconf not found"; exit 0 }
+        Write-Host "pkg-config: $pkgconf"
+        & $pkgconf --version
+        "ASDF_PKG_CONFIG=$pkgconf" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
 
     # libfyaml is the one dependency with no Windows package, and src/util.h
     # includes libfyaml.h, so nothing compiles without it. It supports MSVC
@@ -220,6 +225,7 @@ jobs:
           -DFYAML_NO_PKGCONFIG=YES `
           -DFYAML_INCLUDEDIR="$fy\include" `
           -DFYAML_LIBDIR="$fy\lib" `
+          -DPKG_CONFIG_EXECUTABLE="$env:ASDF_PKG_CONFIG" `
           -DCMAKE_C_FLAGS="/Zc:preprocessor" `
           -DENABLE_TESTING_ALL=YES 2>&1 | Select-Object -Last 30
         Write-Host "=== configure exit: $LASTEXITCODE"
