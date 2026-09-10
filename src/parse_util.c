@@ -52,8 +52,14 @@ int asdf_parser_scan_tokens(
     if (n_tokens == 0)
         return 1;
 
-    const uint8_t *token_vals[n_tokens];
-    size_t token_lens[n_tokens];
+    /*
+     * Fixed size rather than a VLA: MSVC has no variable-length arrays, and
+     * C11 makes them optional. `n_tokens` is already bounded by
+     * ASDF_LAST_TOK, which is what `used_token_ids` and `tokens` above are
+     * sized by, so this allocates nothing and costs a few unused slots.
+     */
+    const uint8_t *token_vals[ASDF_LAST_TOK];
+    size_t token_lens[ASDF_LAST_TOK];
     size_t matched_idx = 0;
 
     for (size_t idx = 0; idx < n_tokens; idx++) {

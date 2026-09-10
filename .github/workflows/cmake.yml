@@ -269,7 +269,8 @@ jobs:
         grep -oE "Cannot open include file: '[^']+'" build.log | sort | uniq -c | sort -rn || echo "(none)"
         echo
         echo "================ other distinct errors ================"
-        grep -oE "error [A-Z]+[0-9]+: .*" build.log | grep -v "Cannot open include file" | sort -u | head -25 || echo "(none)"
+        grep -E "error [A-Z]+[0-9]+:" build.log | sed 's/ \[D:.*//; s|.*libasdf.libasdf.||' \
+          | grep -v "Cannot open include file" | sort -u | head -40 || echo "(none)"
         echo
         echo "================ last 40 lines ================"
         tail -40 build.log
