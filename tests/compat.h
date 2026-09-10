@@ -56,7 +56,16 @@ static inline int asdf_test_group_alive(int group) {
 #endif
 
 /* <dirent.h>, as much of it as the test utilities read. */
+#if !defined(NAME_MAX)
+#define NAME_MAX (MAX_PATH - 1)
+#endif
+
+#define DT_UNKNOWN 0
+#define DT_REG 8
+#define DT_DIR 4
+
 struct dirent {
+    unsigned char d_type;
     char d_name[MAX_PATH];
 };
 
@@ -100,6 +109,8 @@ static inline struct dirent *readdir(DIR *dir) {
 
     strncpy(dir->entry.d_name, dir->data.cFileName, sizeof(dir->entry.d_name) - 1);
     dir->entry.d_name[sizeof(dir->entry.d_name) - 1] = '\0';
+    dir->entry.d_type =
+        (dir->data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? DT_DIR : DT_REG;
     return &dir->entry;
 }
 

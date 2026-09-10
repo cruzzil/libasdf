@@ -1079,6 +1079,18 @@ MU_TEST(write_to_mem_large_tree_realloc) {
 }
 
 
+/*
+ * A #if cannot appear inside a macro argument list, so the platform
+ * conditional becomes a macro that expands to the entry or to nothing.
+ */
+#if !defined(_WIN32)
+#define MU_RUN_SEGFAULT_TEST \
+    MU_RUN_TEST(compressed_block_no_hang_on_segfault, comp_mode_test_params),
+#else
+#define MU_RUN_SEGFAULT_TEST
+#endif
+
+
 MU_TEST_SUITE(
     compression,
     MU_RUN_TEST(write_compressed_ndarray, comp_test_params),
@@ -1088,9 +1100,7 @@ MU_TEST_SUITE(
     MU_RUN_TEST(read_compressed_block_to_file_on_threshold, comp_test_params),
     MU_RUN_TEST(open_close_compressed_block, comp_mode_test_params),
     MU_RUN_TEST(read_compressed_block_lazy_random_access, comp_mode_test_params),
-#if !defined(_WIN32)
-    MU_RUN_TEST(compressed_block_no_hang_on_segfault, comp_mode_test_params),
-#endif
+    MU_RUN_SEGFAULT_TEST
     MU_RUN_TEST(reemit_compressed_verbatim, comp_test_params),
     MU_RUN_TEST(recompress_block),
     MU_RUN_TEST(copy_compressed_block, comp_test_params),
