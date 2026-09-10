@@ -191,6 +191,26 @@ typedef long long ssize_t;
 
 /* Guarded: src/compat/posix.h and tests/compat.h both supply it, and a
  * translation unit can see both. */
+/* memmem is a GNU extension. */
+static inline void *memmem(
+    const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
+    if (needle_len == 0)
+        return (void *)haystack;
+
+    if (haystack_len < needle_len)
+        return NULL;
+
+    const unsigned char *h = (const unsigned char *)haystack;
+    const unsigned char *n = (const unsigned char *)needle;
+
+    for (size_t i = 0; i + needle_len <= haystack_len; i++) {
+        if (h[i] == n[0] && memcmp(h + i, n, needle_len) == 0)
+            return (void *)(h + i);
+    }
+
+    return NULL;
+}
+
 #if !defined(ASDF_STRNDUP_SHIM)
 #define ASDF_STRNDUP_SHIM
 static inline char *strndup(const char *s, size_t n) {
