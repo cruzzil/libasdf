@@ -37,31 +37,28 @@ if(ASDF_HAVE_EXECINFO)
     add_compile_definitions(ASDF_HAVE_EXECINFO)
 endif()
 
-# The test sources include libasdf's internal headers, which reach
-# <stdatomic.h>; MSVC gates that behind /experimental:c11atomics, which needs
-# /std:c11. Applied per target rather than with add_compile_options, because
-# that is directory-wide and would also hit munit -- whose whole problem is
-# that /std:c11 makes it select a VLA form MSVC cannot compile.
+# MSVC settings shared by every test target.
+#
+# /std:c11 and /experimental:c11atomics: test-compression.c includes
+# compression/compression.h, which reaches <stdatomic.h>, and MSVC gates that
+# behind the experimental flag, which in turn needs C11.
+#
+# __PGI: munit selects its array-parameter syntax on
+# `__STDC_VERSION__ >= C99 && !defined(__PGI)`, and MSVC under /std:c11 sets
+# the first while still not implementing variable-length array parameters --
+# so it picks `data[size]`, which does not compile, over the `data[]` it falls
+# back to. __PGI is munit's own escape hatch for a compiler that claims C99
+# and cannot take that form; PGI was one, MSVC is another. It gates nothing
+# else in munit.
 function(asdf_test_msvc_flags target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /std:c11 /experimental:c11atomics)
+        target_compile_definitions(${target} PRIVATE __PGI)
     endif()
 endfunction()
 
 add_library(munit ${MUNIT_DIR}/munit.c)
-
-if(MSVC)
-    # CMAKE_C_STANDARD 11 makes CMake pass /std:c11 to every target. MSVC then
-    # defines __STDC_VERSION__ as C11 while still not implementing VLAs, and
-    # munit keys its array-parameter syntax off exactly that macro -- so it
-    # picks `data[size]`, which MSVC cannot compile, instead of the `data[]`
-    # it falls back to otherwise. Its default C mode compiles clean.
-    #
-    # It has to be the target's C_STANDARD rather than an appended flag:
-    # MSVC has no /std: value meaning "default", so there is nothing to
-    # override the standard flag with once CMake has emitted it.
-    set_target_properties(munit PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED OFF)
-endif()
+asdf_test_msvc_flags(munit)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(munit PRIVATE MUNIT_NO_FORK)
