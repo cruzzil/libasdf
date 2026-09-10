@@ -229,6 +229,26 @@ jobs:
         cl /nologo /std:c11 /experimental:c11atomics /Zc:preprocessor %INC% /c src\yaml.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
         echo ==== done
 
+    # The first error is a broken `_m_value` typedef for `off_t`, so check
+    # directly whether MSVC has the type at all in the context libasdf uses it.
+    - name: Does MSVC have off_t here?
+      shell: cmd
+      continue-on-error: true
+      run: |
+        call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul
+        echo ==== off_t with no includes, as asdf_block_index.h has it:
+        echo off_t probe; > offprobe.c
+        cl /nologo /std:c11 /c offprobe.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== off_t after ^<sys/types.h^>:
+        echo #include ^<sys/types.h^> > offprobe2.c
+        echo off_t probe; >> offprobe2.c
+        cl /nologo /std:c11 /c offprobe2.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== ssize_t after ^<sys/types.h^>:
+        echo #include ^<sys/types.h^> > offprobe3.c
+        echo ssize_t probe; >> offprobe3.c
+        cl /nologo /std:c11 /c offprobe3.c /Fo:nul 2>&1 | findstr /C:"error C" | more +0
+        echo ==== done
+
     - name: What flags did CMake actually record?
       shell: bash
       continue-on-error: true
