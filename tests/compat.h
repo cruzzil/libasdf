@@ -1,0 +1,377 @@
+/**
+ * The POSIX surface the test utilities use, for targets that do not have it.
+ *
+ * On POSIX this is the real headers plus two thin helpers.  On Windows it
+ * supplies directory iteration and process-group identity in terms of the
+ * Win32 equivalents.
+ *
+ * The "process group" here is only ever used as a key: every test binary in
+ * one `ctest` run wants the same run directory, and wants to recognise
+ * coordination files left behind by runs that have since exited.  The parent
+ * process id serves that purpose on Windows exactly as the process group id
+ * does on POSIX -- ctest is the common parent of every test binary it starts.
+ */
+#ifndef ASDF_TESTS_COMPAT_H
+#define ASDF_TESTS_COMPAT_H
+
+#if !defined(_WIN32)
+
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+/** The key shared by every test binary in one run. */
+static inline int asdf_test_group_id(void) {
+    return (int)getpgrp();
+}
+
+/** Is the run that wrote this key still going? */
+static inline int asdf_test_group_alive(int group) {
+    return !(kill(-(pid_t)group, 0) == -1 && errno == ESRCH);
+}
+
+#define asdf_test_symlink(target, link) symlink((target), (link))
+
+/* Descriptor I/O under names that are safe to use on every platform; see the
+ * Windows branch for why these are not simply read/write/close/open. */
+static inline int asdf_test_open(const char *path, int flags, int mode) {
+    return open(path, flags, mode);
+}
+
+static inline int asdf_test_close(int fd) {
+    return close(fd);
+}
+
+static inline long long asdf_test_read(int fd, void *buf, size_t n) {
+    return (long long)read(fd, buf, n);
+}
+
+static inline long long asdf_test_write(int fd, const void *buf, size_t n) {
+    return (long long)write(fd, buf, n);
+}
+
+#else /* _WIN32 */
+
+#include <direct.h>
+#include <stdint.h>
+#include <wchar.h>
+#include <fcntl.h>
+#include <io.h>
+#include <share.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+/* After windows.h, not before: tlhelp32.h uses its types and does not include it. */
+#include <tlhelp32.h>
+
+#if !defined(PATH_MAX)
+#define PATH_MAX _MAX_PATH
+#endif
+
+/* <dirent.h>, as much of it as the test utilities read. */
+#if !defined(NAME_MAX)
+#define NAME_MAX (MAX_PATH - 1)
+#endif
+
+#define DT_UNKNOWN 0
+#define DT_REG 8
+#define DT_DIR 4
+
+struct dirent {
+    unsigned char d_type;
+    char d_name[MAX_PATH];
+};
+
+typedef struct {
+    HANDLE handle;
+    WIN32_FIND_DATAA data;
+    int first;
+    struct dirent entry;
+} DIR;
+
+static inline DIR *opendir(const char *path) {
+    char pattern[MAX_PATH];
+
+    if (snprintf(pattern, sizeof(pattern), "%s\\*", path) < 0)
+        return NULL;
+
+    DIR *dir = (DIR *)calloc(1, sizeof(DIR));
+
+    if (!dir)
+        return NULL;
+
+    dir->handle = FindFirstFileA(pattern, &dir->data);
+
+    if (dir->handle == INVALID_HANDLE_VALUE) {
+        free(dir);
+        return NULL;
+    }
+
+    dir->first = 1;
+    return dir;
+}
+
+static inline struct dirent *readdir(DIR *dir) {
+    if (!dir)
+        return NULL;
+
+    if (dir->first)
+        dir->first = 0;
+    else if (!FindNextFileA(dir->handle, &dir->data))
+        return NULL;
+
+    strncpy(dir->entry.d_name, dir->data.cFileName, sizeof(dir->entry.d_name) - 1);
+    dir->entry.d_name[sizeof(dir->entry.d_name) - 1] = '\0';
+    dir->entry.d_type =
+        (dir->data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? DT_DIR : DT_REG;
+    return &dir->entry;
+}
+
+static inline int closedir(DIR *dir) {
+    if (!dir)
+        return -1;
+
+    FindClose(dir->handle);
+    free(dir);
+    return 0;
+}
+
+/*
+ * The parent process id: ctest starts every test binary in a run, so its id
+ * groups them the way a process group id does on POSIX.
+ */
+static inline int asdf_test_group_id(void) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return (int)GetCurrentProcessId();
+
+    PROCESSENTRY32 entry;
+    entry.dwSize = sizeof(entry);
+    DWORD self = GetCurrentProcessId();
+    int parent = (int)self;
+
+    if (Process32First(snapshot, &entry)) {
+        do {
+            if (entry.th32ProcessID == self) {
+                parent = (int)entry.th32ParentProcessID;
+                break;
+            }
+        } while (Process32Next(snapshot, &entry));
+    }
+
+    CloseHandle(snapshot);
+    return parent;
+}
+
+static inline int asdf_test_group_alive(int group) {
+    HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)group);
+
+    if (!proc)
+        return 0;
+
+    /*
+     * An id is reused once its process is gone, so a live handle alone is not
+     * enough -- check it has not already exited.
+     */
+    DWORD code = 0;
+    int alive = GetExitCodeProcess(proc, &code) && code == STILL_ACTIVE;
+    CloseHandle(proc);
+    return alive;
+}
+
+/* MSVC has neither, under any include. */
+#if !defined(_SSIZE_T_DEFINED)
+#define _SSIZE_T_DEFINED
+typedef long long ssize_t;
+#endif
+
+#if !defined(F_OK)
+#define F_OK 0
+#define X_OK 0 /* Win32 has no execute bit; existence is the closest thing. */
+#define W_OK 2
+#define R_OK 4
+#endif
+
+/* Large-file stdio, which the CRT spells with an i64 suffix. */
+#define ftello(fp) _ftelli64(fp)
+
+#define access(path, mode) _access((path), (mode))
+
+/*
+ * `mkdir` takes no mode on Win32. A macro rather than a renamed helper at every
+ * site, because the mode argument appears in call sites that are otherwise
+ * portable.
+ */
+#define mkdir(path, mode) _mkdir(path)
+
+/*
+ * Symlinks need a privilege Windows does not grant by default, and the caller
+ * treats this as best-effort, so report failure rather than pretend. readlink
+ * follows: with nothing written, there is nothing to read back.
+ */
+#define asdf_test_symlink(target, link) (-1)
+
+/* The CRT has the _S_IF* bits but not the POSIX test macros. */
+#if !defined(S_ISREG)
+#define S_ISREG(mode) (((mode) & _S_IFMT) == _S_IFREG)
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#endif
+
+/* memmem is a GNU extension. */
+static inline void *memmem(
+    const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
+    if (needle_len == 0)
+        return (void *)haystack;
+
+    if (haystack_len < needle_len)
+        return NULL;
+
+    const unsigned char *h = (const unsigned char *)haystack;
+    const unsigned char *n = (const unsigned char *)needle;
+
+    for (size_t i = 0; i + needle_len <= haystack_len; i++) {
+        if (h[i] == n[0] && memcmp(h + i, n, needle_len) == 0)
+            return (void *)(h + i);
+    }
+
+    return NULL;
+}
+
+/* Guarded: src/compat/posix.h supplies it too, and a test can see both. */
+#if !defined(ASDF_STRNDUP_SHIM)
+#define ASDF_STRNDUP_SHIM
+static inline char *strndup(const char *s, size_t n) {
+    size_t len = strnlen(s, n);
+    char *p = (char *)malloc(len + 1);
+
+    if (!p)
+        return NULL;
+
+    memcpy(p, s, len);
+    p[len] = '\0';
+    return p;
+}
+#endif
+
+static inline ssize_t readlink(const char *path, char *buf, size_t len) {
+    (void)path;
+    (void)buf;
+    (void)len;
+    return -1;
+}
+
+/*
+ * fmemopen, on a temp file.
+ *
+ * Win32 has no memory-backed FILE. The tests only ever read, so write the
+ * buffer out and hand back a read handle; _O_TEMPORARY makes it vanish when
+ * the last descriptor closes, so fclose still cleans up.
+ */
+static inline FILE *fmemopen(void *buf, size_t size, const char *mode) {
+    (void)mode;
+
+    char path[MAX_PATH];
+    char dir[MAX_PATH];
+
+    if (!GetTempPathA(sizeof(dir), dir))
+        return NULL;
+
+    if (!GetTempFileNameA(dir, "asdf", 0, path))
+        return NULL;
+
+    int fd = -1;
+
+    if (_sopen_s(
+            &fd,
+            path,
+            _O_CREAT | _O_RDWR | _O_BINARY | _O_TEMPORARY,
+            _SH_DENYNO,
+            _S_IREAD | _S_IWRITE) != 0)
+        return NULL;
+
+    FILE *fp = _fdopen(fd, "w+b");
+
+    if (!fp) {
+        _close(fd);
+        return NULL;
+    }
+
+    if (size && fwrite(buf, 1, size, fp) != size) {
+        fclose(fp);
+        return NULL;
+    }
+
+    rewind(fp);
+    return fp;
+}
+
+static inline void usleep(unsigned int microseconds) {
+    /* Sleep takes milliseconds, and rounds up so a sub-ms wait still yields. */
+    Sleep((DWORD)((microseconds + 999) / 1000));
+}
+
+#define unlink(path) _unlink(path)
+
+/*
+ * Descriptor I/O: named helpers, never macros, for the same reason as
+ * src/compat/posix.h. An object-like `#define read _read` rewrites the `read`
+ * attribute in asdf/util.h's `#pragma section(".CRT$XCU", read)`, so any test
+ * including this header first lost every ASDF_CONSTRUCTOR to C2341. A
+ * function-like `read(fd, buf, n)` avoids that, but then rewrites
+ * `stream->write(stream, buf, count)` in src/stream.h, which the block,
+ * stream, parser, file and compression tests all include. _O_BINARY keeps the
+ * run-directory coordination files free of text-mode translation.
+ */
+static inline int asdf_test_open(const char *path, int flags, int mode) {
+    return _open(path, flags | _O_BINARY, mode);
+}
+
+static void asdf_test_ignore_invalid_parameter_(
+    const wchar_t *expression,
+    const wchar_t *function,
+    const wchar_t *file,
+    unsigned int line,
+    uintptr_t reserved) {
+    (void)expression;
+    (void)function;
+    (void)file;
+    (void)line;
+    (void)reserved;
+}
+
+/*
+ * POSIX close() on a descriptor that is already closed returns -1 and sets
+ * EBADF, and test-compression checks exactly that to prove libasdf closed its
+ * temp file. The CRT treats the same call as an invalid parameter and
+ * fast-fails the whole process with 0xc0000409. Suppressing the handler for
+ * this one call -- thread-locally, so nothing else is affected -- lets _close
+ * return -1 with errno EBADF, which is the POSIX answer.
+ */
+static inline int asdf_test_close(int fd) {
+    _invalid_parameter_handler previous =
+        _set_thread_local_invalid_parameter_handler(asdf_test_ignore_invalid_parameter_);
+    int ret = _close(fd);
+    _set_thread_local_invalid_parameter_handler(previous);
+    return ret;
+}
+
+static inline long long asdf_test_read(int fd, void *buf, size_t n) {
+    return _read(fd, buf, (unsigned int)n);
+}
+
+static inline long long asdf_test_write(int fd, const void *buf, size_t n) {
+    return _write(fd, buf, (unsigned int)n);
+}
+
+#endif /* _WIN32 */
+
+#endif /* ASDF_TESTS_COMPAT_H */

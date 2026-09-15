@@ -37,10 +37,13 @@
     if ((tag) == NULL) { \
         assert_int(__len, ==, 0); \
     } else { \
-        char __buf[__len + 1]; \
+        /* Heap, not a VLA: MSVC has no variable-length arrays. */ \
+        char *__buf = malloc(__len + 1); \
+        assert_not_null(__buf); \
         memcpy(__buf, __tag, __len); \
         __buf[__len] = '\0'; \
         assert_string_equal(__buf, (tag)); \
+        free(__buf); \
     } \
 } while (0)
 
@@ -54,10 +57,13 @@
         assert_null(__value); \
     } else { \
         assert_int(__len, ==, strlen(value)); \
-        char __buf[__len + 1]; \
+        /* Heap, not a VLA: MSVC has no variable-length arrays. */ \
+        char *__buf = malloc(__len + 1); \
+        assert_not_null(__buf); \
         memcpy(__buf, __value, __len); \
         __buf[__len] = '\0'; \
         assert_string_equal(__buf, (value)); \
+        free(__buf); \
     } \
 } while (0)
 
@@ -490,7 +496,9 @@ MU_TEST(basic_buffer_yaml) {
 MU_TEST(test_asdf_event_summary) {
     const char *filename = get_reference_file_path("1.6.0/basic.asdf");
     const char *log_file = get_temp_file_path(fixture->tempfile_prefix, ".log");
-    FILE *log_stream = fopen(log_file, "w");
+    /* Binary: the log is compared byte for byte, and a text-mode stream on
+     * Windows writes every newline as CRLF. */
+    FILE *log_stream = fopen(log_file, "wb");
     assert_not_null(log_stream);
     asdf_log_cfg_t log_config = {
         .level = ASDF_LOG_TRACE, .fields = ASDF_LOG_FIELD_ALL ^ ASDF_LOG_FIELD_LINE,

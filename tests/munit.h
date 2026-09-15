@@ -4,13 +4,14 @@
  * I am truly sorry to anyone who maintains this in the future.
  */
 
-#include <dirent.h>
-#include <execinfo.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
+
+#include <asdf/util.h> /* ASDF_CONSTRUCTOR */
+
+#include "compat.h"
 
 // Workaround to likely GCC bug:
 // When STC is imported it typically pushes/pops some warning diagnostics,
@@ -34,7 +35,12 @@
 #if defined(__GNUC__) || defined(__clang__)
 #define UNUSED(x) x __attribute__((unused))
 #else
-#define UNUSED(x) (void)(x)
+/*
+ * `x` is a whole parameter declaration, so the expansion has to stay one --
+ * `(void)(x)` is a syntax error in a parameter list, which is where MU_TEST
+ * uses it. The cost of the plain declaration is C4100, not an error.
+ */
+#define UNUSED(x) x
 #endif
 
 
@@ -42,7 +48,16 @@
 static int orig_stderr;
 
 
-/** Enable backtraces from tests when they segfault */
+/** Enable backtraces from tests when they segfault, where execinfo.h exists */
+#if defined(__has_include)
+#if __has_include(<execinfo.h>)
+#define MU_HAVE_EXECINFO 1
+#endif
+#endif
+
+#ifdef MU_HAVE_EXECINFO
+#include <execinfo.h>
+
 static void crash_handler(int sig) {
     void *bt[64];
     int n = write(orig_stderr, "\n", 1);
@@ -52,13 +67,13 @@ static void crash_handler(int sig) {
 }
 
 
-__attribute__((constructor))
-static void install_crash_handler(void) {
+ASDF_CONSTRUCTOR(install_crash_handler) {
     orig_stderr = dup(STDERR_FILENO);
     signal(SIGBUS, crash_handler);
     signal(SIGSEGV, crash_handler);
     signal(SIGABRT, crash_handler);
 }
+#endif
 
 
 typedef struct {

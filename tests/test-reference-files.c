@@ -6,11 +6,14 @@
  * binary block carrying a checksum must have a valid one.  Values covered by
  * the exceptions below are skipped.
  */
-#include <dirent.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <asdf/util.h> /* ASDF_CONSTRUCTOR */
+
+#include "compat.h"
 
 #include "munit.h"
 #include "util.h"
@@ -294,7 +297,7 @@ static MunitParameterEnum reference_file_params[] = {
 };
 
 
-__attribute__((constructor)) static void collect_reference_files(void) {
+ASDF_CONSTRUCTOR(collect_reference_files) {
     char **versions = list_dir(REFERENCE_FILES_DIR, is_version_dir);
 
     if (!versions)

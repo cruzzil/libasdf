@@ -39,9 +39,47 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
         DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # Build munit static library
+# MSVC settings shared by every test target.
+#
+# /std:c11 and /experimental:c11atomics: test-compression.c includes
+# compression/compression.h, which reaches <stdatomic.h>, and MSVC gates that
+# behind the experimental flag, which in turn needs C11.
+#
+# __PGI: munit selects its array-parameter syntax on
+# `__STDC_VERSION__ >= C99 && !defined(__PGI)`, and MSVC under /std:c11 sets
+# the first while still not implementing variable-length array parameters --
+# so it picks `data[size]`, which does not compile, over the `data[]` it falls
+# back to. __PGI is munit's own escape hatch for a compiler that claims C99
+# and cannot take that form; PGI was one, MSVC is another. It gates nothing
+# else in munit.
+function(asdf_test_msvc_flags target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /std:c11 /experimental:c11atomics)
+        target_compile_definitions(${target} PRIVATE __PGI)
+    endif()
+endfunction()
+
+# munit gets __PGI but deliberately NOT /experimental:c11atomics.
+#
+# It picks its atomics on `__STDC_VERSION__ >= C11 && !__STDC_NO_ATOMICS__`.
+# With the experimental flag MSVC drops __STDC_NO_ATOMICS__, so munit takes
+# the <stdatomic.h> path and initialises its RNG state with ATOMIC_VAR_INIT,
+# which MSVC rejects as a non-constant initialiser. Without it, munit falls to
+# its own _WIN32 branch -- volatile LONG and the Interlocked functions -- which
+# is the path it was written to use there. It needs no atomics from us.
+function(asdf_munit_msvc_flags target)
+    if(MSVC)
+        target_compile_definitions(${target} PRIVATE __PGI)
+    endif()
+endfunction()
+
 add_library(munit ${MUNIT_DIR}/munit.c)
-# Suppress spurious compiler warning noted when building munit
-target_compile_options(munit PRIVATE -Wno-unused-result)
+if(MSVC)
+    asdf_munit_msvc_flags(munit)
+else()
+    # Suppress spurious compiler warning noted when building munit
+    target_compile_options(munit PRIVATE -Wno-unused-result)
+endif()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(munit PRIVATE MUNIT_NO_FORK)
@@ -53,6 +91,7 @@ set(FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 set(TEMP_DIR "${CMAKE_CURRENT_BINARY_DIR}/tmp")
 
 add_library(util util.c)
+asdf_test_msvc_flags(util)
 target_include_directories(util PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${STATGRAB_INCLUDEDIR}
@@ -64,6 +103,7 @@ add_compile_definitions(TEMP_DIR=\"${TEMP_DIR}\")
 # Helper used by the shell tests to discover the run directory chosen by
 # util.c's constructor
 add_executable(run-dir run-dir.c)
+asdf_test_msvc_flags(run-dir)
 target_include_directories(run-dir PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_SOURCE_DIR}/include
@@ -83,7 +123,10 @@ if (ENABLE_UBSAN)
 endif()
 
 # -------- Run optional shell command tests ----------------------------------
-if (BASH_PROGRAM AND ENABLE_TESTING_SHELL)
+# The shell tests drive the `asdf` command-line tool, so they need it built.
+# ENABLE_TOOL is switched off where argp is unavailable -- Windows -- and a
+# bash on PATH (Git for Windows ships one) is not reason enough to run them.
+if (BASH_PROGRAM AND ENABLE_TESTING_SHELL AND ENABLE_TOOL)
     foreach(shell_file ${shell_files})
         file(REAL_PATH ${shell_file} shell_name)
         string(REGEX REPLACE ${ext_pattern} "" shell_name ${shell_file})
@@ -128,13 +171,15 @@ set(test_libraries
     ${LZ4_LIBRARIES}
     ${ZLIB_LIBRARIES}
     ${MD5_LIBRARIES}
-    m
+    # The MSVC CRT carries the math functions; there is no libm to link.
+    $<$<NOT:$<BOOL:${WIN32}>>:m>
 )
 list(REMOVE_DUPLICATES test_libraries)
 
 foreach(source_file ${source_files})
     string(REGEX REPLACE ${ext_pattern} "" test_executable ${source_file})
     add_executable(${test_executable} ${source_file})
+    asdf_test_msvc_flags(${test_executable})
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
         target_compile_options(${test_executable} PRIVATE ${nix_cflags} ${nix_gnu_cflags})
         # Make __FILE__ names relative to source root
@@ -227,7 +272,11 @@ if (ENABLE_TESTING_CPP)
         message(FATAL_ERROR "C++ compiler required for ENABLE_TESTING_CPP but none found")
     endif()
 
-    set(GENERATE_CPP_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_test_cpp_headers.sh)
+    # The generator is Python: the shell script it replaces could not run on
+    # Windows, and both build systems already require Python.
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+    set(GENERATE_CPP_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_test_cpp_headers.py)
     set(CPP_HEADER_TEST ${CTEST_BINARY_DIRECTORY}/test-cpp-headers.cpp)
     file(GLOB ASDF_PUBLIC_HEADERS
         ${CMAKE_SOURCE_DIR}/include/asdf/*.h
@@ -236,7 +285,8 @@ if (ENABLE_TESTING_CPP)
 
     add_custom_command(
         OUTPUT ${CPP_HEADER_TEST}
-        COMMAND ${GENERATE_CPP_HEADERS} ${CMAKE_SOURCE_DIR}/include ${CPP_HEADER_TEST} ${ASDF_PUBLIC_HEADERS}
+        COMMAND ${Python3_EXECUTABLE} ${GENERATE_CPP_HEADERS}
+            ${CMAKE_SOURCE_DIR}/include ${CPP_HEADER_TEST} ${ASDF_PUBLIC_HEADERS}
         DEPENDS ${ASDF_PUBLIC_HEADERS} ${GENERATE_CPP_HEADERS}
         COMMENT "Generating C++ header test file"
         VERBATIM
@@ -320,6 +370,7 @@ if(ENABLE_TESTING_DOCS)
         set(source_file ${DOC_EXAMPLES_DIR}/${doctest}.c)
         set(exe_file ${DOC_EXAMPLES_DIR}/${doctest})
         add_executable(${doctest} ${source_file})
+        asdf_test_msvc_flags(${doctest})
         target_include_directories(${doctest} PRIVATE ${CMAKE_SOURCE_DIR}/include)
         target_link_libraries(${doctest} PRIVATE libasdf)
         add_dependencies(${doctest} extract-doc-examples)
@@ -334,5 +385,17 @@ if(ENABLE_TESTING_DOCS)
         # Prepend the build dir libasdf to the library search path
         set_property(TEST ${doctest}
             PROPERTY ENVIRONMENT_MODIFICATION "${runtime}")
+        if (WIN32)
+            # The doc tests are the only ones linking the shared libasdf rather
+            # than its objects, and Windows' loader ignores LD_LIBRARY_PATH: it
+            # searches the executable's directory and PATH. asdf.dll sits in a
+            # per-config directory that is on neither, and a missing DLL does
+            # not fail fast -- it raises a loader dialog and waits, which is
+            # what timed these out. The generator expression resolves that
+            # per-config directory.
+            set_property(TEST ${doctest} APPEND
+                PROPERTY ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:libasdf>")
+        endif()
     endforeach()
 endif()

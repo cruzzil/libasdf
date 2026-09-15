@@ -10,7 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
+
+#include "compat.h"
 
 #include "asdf/core/ndarray.h"
 
@@ -201,7 +202,7 @@ static int test_compressed_file(
     if (should_own_fd) {
         // The file descriptor for the temp file was closed
         errno = 0;
-        assert_int(close(fd), ==, -1);
+        assert_int(asdf_test_close(fd), ==, -1);
         assert_int(errno, ==, EBADF);
     }
 
@@ -309,6 +310,12 @@ MU_TEST(open_close_compressed_block) {
 }
 
 
+/*
+ * POSIX signal handling: sigjmp_buf, sigaction and siglongjmp, none of which
+ * Win32 has. The behaviour under test is the lazy decompression path, which
+ * is built on userfaultfd and does not exist there either.
+ */
+#if !defined(_WIN32)
 /* Used for compressed_block_no_hang_on_segfault
  *
  * This is to ensure that trying to access the data after the block is closed
@@ -384,6 +391,7 @@ MU_TEST(compressed_block_no_hang_on_segfault) {
     asdf_close(file);
     return MUNIT_OK;
 }
+#endif /* !_WIN32 */
 
 
 /**
@@ -1071,6 +1079,18 @@ MU_TEST(write_to_mem_large_tree_realloc) {
 }
 
 
+/*
+ * A #if cannot appear inside a macro argument list, so the platform
+ * conditional becomes a macro that expands to the entry or to nothing.
+ */
+#if !defined(_WIN32)
+#define MU_RUN_SEGFAULT_TEST \
+    MU_RUN_TEST(compressed_block_no_hang_on_segfault, comp_mode_test_params),
+#else
+#define MU_RUN_SEGFAULT_TEST
+#endif
+
+
 MU_TEST_SUITE(
     compression,
     MU_RUN_TEST(write_compressed_ndarray, comp_test_params),
@@ -1080,7 +1100,7 @@ MU_TEST_SUITE(
     MU_RUN_TEST(read_compressed_block_to_file_on_threshold, comp_test_params),
     MU_RUN_TEST(open_close_compressed_block, comp_mode_test_params),
     MU_RUN_TEST(read_compressed_block_lazy_random_access, comp_mode_test_params),
-    MU_RUN_TEST(compressed_block_no_hang_on_segfault, comp_mode_test_params),
+    MU_RUN_SEGFAULT_TEST
     MU_RUN_TEST(reemit_compressed_verbatim, comp_test_params),
     MU_RUN_TEST(recompress_block),
     MU_RUN_TEST(copy_compressed_block, comp_test_params),

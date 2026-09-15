@@ -2,19 +2,18 @@
  * Utilities for unit tests
  */
 
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
+#include <asdf/util.h> /* ASDF_CONSTRUCTOR */
+
+#include "compat.h"
 #include "config.h"
 #ifdef HAVE_STATGRAB
 #include <statgrab.h>
@@ -119,7 +118,7 @@ static void clean_stale_pgid_files(void) {
         if (sscanf(ent->d_name, PGID_FILE_TEMPLATE, &pgid) != 1 || pgid <= 0)
             continue;
 
-        if (kill(-(pid_t)pgid, 0) == -1 && errno == ESRCH) {
+        if (!asdf_test_group_alive(pgid)) {
             char path[PATH_MAX];
             snprintf(path, sizeof(path), TEMP_DIR "/%s", ent->d_name);
             unlink(path);
@@ -140,13 +139,13 @@ static void clean_stale_pgid_files(void) {
  * Returns 1 and sets run_dir_storage on success, 0 otherwise.
  */
 static int join_existing_run(const char *pgid_file) {
-    int fd = open(pgid_file, O_RDONLY);
+    int fd = asdf_test_open(pgid_file, O_RDONLY, 0);
     if (fd < 0)
         return 0;
 
     char serial_str[TEST_SERIAL_LEN + 1] = {0};
-    ssize_t n = read(fd, serial_str, sizeof(serial_str) - 1);
-    close(fd);
+    ssize_t n = (ssize_t)asdf_test_read(fd, serial_str, sizeof(serial_str) - 1);
+    asdf_test_close(fd);
 
     /* A short read means the pioneer has created the coordination file but
      * has not yet finished writing to it; treat it as "not ready". */
@@ -256,9 +255,9 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
 
     /* Reuse the previous run directory if it is still empty. */
     if (try_reuse_latest(serial_str)) {
-        if (write(fd_create, serial_str, strlen(serial_str)) < 0)
+        if (asdf_test_write(fd_create, serial_str, strlen(serial_str)) < 0)
             goto failure;
-        close(fd_create);
+        asdf_test_close(fd_create);
         return;
     }
 
@@ -275,13 +274,13 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
             char serial_buf[32];
             snprintf(serial_buf, sizeof(serial_buf), TEST_SERIAL_FMT, run_num);
             memcpy(serial_str, serial_buf, TEST_SERIAL_LEN + 1);
-            if (write(fd_create, serial_str, strlen(serial_str)) < 0)
+            if (asdf_test_write(fd_create, serial_str, strlen(serial_str)) < 0)
                 goto failure;
-            close(fd_create);
+            asdf_test_close(fd_create);
             char latest[PATH_MAX];
             snprintf(latest, sizeof(latest), TEMP_DIR "/latest");
             unlink(latest);
-            int rc = symlink(serial_str, latest);  /* best-effort */
+            int rc = asdf_test_symlink(serial_str, latest);  /* best-effort */
             (void)rc;
             return;
         }
@@ -292,7 +291,7 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
 failure:
     /* Failed to create a run directory or write the serial; clean up. */
     run_dir_storage[0] = '\0';
-    close(fd_create);
+    asdf_test_close(fd_create);
     unlink(pgid_file);
 }
 
@@ -300,12 +299,11 @@ failure:
 #define CLAIM_RUN_ATTEMPTS 3
 
 
-__attribute__((constructor))
-static void init_run_dir(void) {
+ASDF_CONSTRUCTOR(init_run_dir) {
     ensure_tmp_dir();
     clean_stale_pgid_files();
 
-    pid_t pgid = getpgrp();
+    int pgid = asdf_test_group_id();
     char pgid_file[PATH_MAX];
     snprintf(pgid_file, sizeof(pgid_file), TEMP_DIR "/" PGID_FILE_TEMPLATE, (int)pgid);
 
@@ -315,7 +313,7 @@ static void init_run_dir(void) {
             return;
 
         /* Pioneer: atomically claim the coordination file. */
-        int fd_create = open(pgid_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        int fd_create = asdf_test_open(pgid_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
         if (fd_create >= 0) {
             pioneer_setup(fd_create, pgid_file);
             return;
@@ -357,13 +355,13 @@ const char *get_temp_file_path(const char *prefix, const char *suffix) {
     /* Create the file so it exists (matching the old mkstemp-based behaviour).
      * The run directory should already exist, but recreate it and retry once
      * if something outside the test run removed it. */
-    int fd = open(fullpath, O_CREAT | O_WRONLY, 0600);
+    int fd = asdf_test_open(fullpath, O_CREAT | O_WRONLY, 0600);
     if (fd < 0 && errno == ENOENT) {
         mkdir(get_run_dir(), 0777);
-        fd = open(fullpath, O_CREAT | O_WRONLY, 0600);
+        fd = asdf_test_open(fullpath, O_CREAT | O_WRONLY, 0600);
     }
     if (fd >= 0)
-        close(fd);
+        asdf_test_close(fd);
 
     return fullpath;
 }

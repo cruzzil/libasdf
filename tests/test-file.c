@@ -7,11 +7,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <stc/cstr.h>
 
 #include <errno.h>
+
+#include "compat.h"
 
 #include "asdf/emitter.h"
 #include "asdf/error.h"
@@ -89,7 +90,9 @@ MU_TEST(test_asdf_open_file_not_asdf) {
     const char *filename = get_temp_file_path(fixture->tempfile_prefix, ".asdf");
     FILE *fp = fopen(filename, "w");
     int ret = fputs("just some utter garbage\n", fp);
-    if (MUNIT_UNLIKELY(ret <= 0)) {
+    /* EOF is the only failure value: C leaves success as "non-negative", and
+     * MSVC's CRT returns 0 for it, which a `<= 0` check reads as an error. */
+    if (MUNIT_UNLIKELY(ret == EOF)) {
         munit_error("error writing to temp file)");
         return MUNIT_ERROR;
     }
