@@ -116,7 +116,10 @@ if (ENABLE_UBSAN)
 endif()
 
 # -------- Run optional shell command tests ----------------------------------
-if (BASH_PROGRAM AND ENABLE_TESTING_SHELL)
+# The shell tests drive the `asdf` command-line tool, so they need it built.
+# ENABLE_TOOL is switched off where argp is unavailable -- Windows -- and a
+# bash on PATH (Git for Windows ships one) is not reason enough to run them.
+if (BASH_PROGRAM AND ENABLE_TESTING_SHELL AND ENABLE_TOOL)
     foreach(shell_file ${shell_files})
         file(REAL_PATH ${shell_file} shell_name)
         string(REGEX REPLACE ${ext_pattern} "" shell_name ${shell_file})

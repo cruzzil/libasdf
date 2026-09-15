@@ -60,6 +60,12 @@ check_endian_decl(htole32)
 
 
 check_function_exists(strptime HAVE_STRPTIME)
+if(WIN32)
+    # The CRT has no strptime; src/compat/posix.h supplies one covering the
+    # formats time.c parses. Without it every string time silently comes back
+    # as year 1900 with a zero timestamp.
+    set(HAVE_STRPTIME 1)
+endif()
 
 
 # Check for usable _Float16 for datatype support

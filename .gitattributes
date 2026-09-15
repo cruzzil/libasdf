@@ -1,0 +1,6 @@
+# Test fixtures are compared byte for byte, and the parser reads them as bytes.
+# Without this, Git for Windows' default core.autocrlf=true rewrites every
+# fixture that contains no NUL byte -- the YAML-only .asdf files and the
+# events/info captures -- to CRLF on checkout, and the tests then fail on
+# "1.0.0\r" and on files that differ only in line endings.
+tests/fixtures/** -text
