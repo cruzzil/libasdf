@@ -56,6 +56,8 @@ static inline long long asdf_test_write(int fd, const void *buf, size_t n) {
 #else /* _WIN32 */
 
 #include <direct.h>
+#include <stdint.h>
+#include <wchar.h>
 #include <fcntl.h>
 #include <io.h>
 #include <share.h>
@@ -335,8 +337,33 @@ static inline int asdf_test_open(const char *path, int flags, int mode) {
     return _open(path, flags | _O_BINARY, mode);
 }
 
+static void asdf_test_ignore_invalid_parameter_(
+    const wchar_t *expression,
+    const wchar_t *function,
+    const wchar_t *file,
+    unsigned int line,
+    uintptr_t reserved) {
+    (void)expression;
+    (void)function;
+    (void)file;
+    (void)line;
+    (void)reserved;
+}
+
+/*
+ * POSIX close() on a descriptor that is already closed returns -1 and sets
+ * EBADF, and test-compression checks exactly that to prove libasdf closed its
+ * temp file. The CRT treats the same call as an invalid parameter and
+ * fast-fails the whole process with 0xc0000409. Suppressing the handler for
+ * this one call -- thread-locally, so nothing else is affected -- lets _close
+ * return -1 with errno EBADF, which is the POSIX answer.
+ */
 static inline int asdf_test_close(int fd) {
-    return _close(fd);
+    _invalid_parameter_handler previous =
+        _set_thread_local_invalid_parameter_handler(asdf_test_ignore_invalid_parameter_);
+    int ret = _close(fd);
+    _set_thread_local_invalid_parameter_handler(previous);
+    return ret;
 }
 
 static inline long long asdf_test_read(int fd, void *buf, size_t n) {

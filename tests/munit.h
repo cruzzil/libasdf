@@ -79,7 +79,17 @@ static void mu_win32_invalid_parameter(
     (void)line;
     (void)reserved;
 
+    /*
+     * Also to a file: munit redirects each test's stderr and restores it only
+     * when the test returns, so a handler that aborts mid-test is otherwise
+     * silent. The file lands in the test's working directory.
+     */
+    FILE *out = fopen("asdf-crt-invalid-parameter.log", "a");
+
     fprintf(stderr, "\n*** CRT invalid parameter; stack:\n");
+
+    if (out)
+        fprintf(out, "*** CRT invalid parameter; stack:\n");
 
     HANDLE process = GetCurrentProcess();
     SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
@@ -102,11 +112,21 @@ static void mu_win32_invalid_parameter(
 
         const char *name = SymFromAddr(process, addr, NULL, symbol) ? symbol->Name : "?";
 
-        if (SymGetLineFromAddr64(process, addr, &disp, &where))
+        if (SymGetLineFromAddr64(process, addr, &disp, &where)) {
             fprintf(stderr, "  #%u %s (%s:%lu)\n", idx, name, where.FileName, where.LineNumber);
-        else
+
+            if (out)
+                fprintf(out, "  #%u %s (%s:%lu)\n", idx, name, where.FileName, where.LineNumber);
+        } else {
             fprintf(stderr, "  #%u %s\n", idx, name);
+
+            if (out)
+                fprintf(out, "  #%u %s\n", idx, name);
+        }
     }
+
+    if (out)
+        fclose(out);
 
     fflush(stderr);
     abort();

@@ -284,6 +284,7 @@ jobs:
         path: |
           build/ctest.log
           build/Testing/Temporary/LastTest.log
+          build/tests/asdf-crt-invalid-parameter.log
         if-no-files-found: warn
 
     - name: Smoke test the DLL
