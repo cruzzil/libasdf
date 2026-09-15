@@ -1,102 +1,129 @@
 # libasdf on Windows (MSVC)
 
-**It builds, links, exports, and runs.**
+**The library builds, and the full test suite passes.** 27 tests run on
+`windows-latest` with MSVC 19.51; 26 pass and one skips by design (below).
+A smoke test compiled from a developer command prompt writes an ASDF file and
+reads it back. Linux (gcc and clang, with and without ASan), macOS (with and
+without ASan) and the documentation build stay green, and the autotools
+`make check` stays at 26/26.
 
-```
-using import library: D:\a\libasdf\libasdf\build\src\RelWithDebInfo\asdf.lib
-name=Dennis Ritchie answer=42
-SMOKE OK
----- smoke exit 0
-```
+The `windows` job in `.github/workflows/cmake.yml` reproduces it on
+`workflow_dispatch`. **Private branch, not for upstream as-is.**
 
-That is a real program compiled against the vendored headers and the import
-library, writing an ASDF file and reading the values back, on `windows-latest`
-with MSVC 19.51. The `windows` job in `.github/workflows/cmake.yml` does it on
-`workflow_dispatch`. **Private branch, not for upstream.**
+## What stays off, and why
 
-Linux and macOS are unaffected: gcc and clang, with and without ASan, all green
-at 30/30 tests.
+| | |
+|---|---|
+| The `asdf` CLI | `main.c` needs `argp`, which has no MSVC port. Configure probes for `<argp.h>` and turns `ENABLE_TOOL` off with a message. The shell tests drive the CLI, so they need `ENABLE_TOOL` too. |
+| `test-symbol-leakage` | Skips (exit 77) by its own checks: it reads an ELF/Mach-O symbol table with `nm`. The Windows equivalent would use `dumpbin /exports`. |
+| lz4 `read_compressed_reference_file` | Skips on **every** platform: that reference file has no lz4 block. Not a Windows gap. |
+| `compressed_block_no_hang_on_segfault` | Built on `sigaction`/`siglongjmp`, and exercises lazy decompression, which rests on `userfaultfd`. Neither exists on Windows. |
 
-## The shape of it
+## Known limitations
 
-Nothing needed rewriting. It came down to a compat header, a handful of
-over-broad `#ifdef`s, and the fact that Windows exports no symbols unless you
-say so. libfyaml -- which an earlier version of this file wrongly called a hard
-blocker -- builds clean with MSVC as a vendored subproject, and zlib, bzip2 and
-lz4 come from vcpkg with the existing detection unchanged.
+- **File offsets past 2 GB.** `off_t` is a 32-bit `long` on MSVC, and it types
+  `block.h`'s `header_pos`/`data_pos` and the stream's `seek`, `tell` and
+  `open_mem`. Fixing it means changing internal types; not done here.
+- **Lazy decompression** is Linux-only (`userfaultfd`); Windows uses the eager
+  and decompress-to-file paths, which both pass.
 
-## What still does not build
+## Environment
 
-Both third-party, neither in libasdf:
+- **libfyaml** is vendored and built with MSVC (it supports it — see its
+  `doc/windows-support.txt`).
+- **zlib, bzip2, lz4 and pkgconf** come from vcpkg. pkg-config comes from
+  vcpkg too: Chocolatey's `pkgconfiglite` began installing "0/0 packages", and
+  without a pkg-config every `pkg_check_modules` silently skips.
+- **PowerShell and cmd throughout.** Git Bash is on the runner, but it rewrites
+  POSIX paths into Windows ones on the way to native programs, so a bash job
+  partly tests MSYS rather than the build.
 
-- **The tests.** munit is built on VLAs, which MSVC does not implement at any
-  `/std:` level. Needs munit patches or a different framework.
-- **The CLI.** `main.c` wants `argp`, which has no Windows port.
+## Required of anyone using these headers with MSVC
 
-Configured with `-DENABLE_TESTING_ALL=NO -DENABLE_TOOL=OFF` for that reason.
+- **`/Zc:preprocessor`.** `asdf_open` and `asdf_write_to` are `_Generic` macros
+  dispatched on a `__VA_ARGS__` argument count; the traditional preprocessor
+  miscounts and silently picks the `FILE *` overload for a filename.
+- **`/std:c11 /experimental:c11atomics`** for libasdf's own sources
+  (`<stdatomic.h>`). Scoped per target — see munit below.
 
-## What was needed
+## Bugs found that are not Windows-specific
 
-**Exports.** `ASDF_EXPORT` was empty on MSVC, so the DLL had no export table
-and no import library -- nothing could link against it. It now expands to
-`__declspec(dllexport)` while the library is built and `dllimport` for callers,
-selected by `ASDF_BUILDING_DLL`. The `asdf_open_*_ex` forward declarations in
-`file.h` had to be marked too: GCC merges attributes across declarations,
-MSVC calls a bare one a redefinition with different linkage.
+Candidates for upstream; none sent from this branch except where noted.
 
-**`/Zc:preprocessor` is required for consumers, not just for the build.**
-`asdf_open` and `asdf_write_to` are `_Generic` macros dispatched on a
-`__VA_ARGS__` argument count; MSVC's traditional preprocessor counts it wrong
-and silently picks the `FILE *` overload for a filename. Also
-`/experimental:c11atomics` for C11 `<stdatomic.h>`.
+- **`HAVE_STRPTIME` guarded far too much.** It wrapped the Julian Date constants
+  and thirteen arithmetic time parsers, while the format dispatch outside called
+  them unconditionally. On any platform without `strptime` the file failed to
+  compile, then failed to link. Reproducible on Linux by clearing
+  `HAVE_STRPTIME` in `config.h`.
+- **A failed block map crashed the process.** `asdf_block_data_impl` passed a
+  NULL from `stream->open_mem` straight to the decompressor, which dereferenced
+  it. It now returns NULL.
+- **Extension functions marked `ASDF_EXPORT`.** `ASDF_REGISTER_EXTENSION`
+  generates 22 function *definitions* in the extension's own translation unit,
+  but `ASDF_EXPORT` is `dllimport` to anyone including the header, and a
+  dllimport function cannot be defined. Now `ASDF_EXT_EXPORT`.
+- **`UNUSED(x)`**, in both `src/util.h` and `tests/munit.h`, expanded to
+  `(void)(x)` off GCC — a syntax error in the parameter lists it is used in.
+- **`-DUSE_STATGRAB=OFF` did nothing.** Sent upstream: asdf-format/libasdf#262,
+  PR #263.
+- **`core/time.h` included `<sys/time.h>`** for a type `<time.h>` provides.
+  Filed: asdf-format/libasdf#261.
 
-**`src/compat/posix.h`** -- `<unistd.h>` and `<sys/mman.h>` on Win32: file
-mapping via `CreateFileMapping`/`MapViewOfFile`, with `munmap` asking
-`VirtualQuery` whether it holds a view or an anonymous allocation, since the
-caller does not say and the two are released differently. Plus `ssize_t`,
-`SSIZE_MAX`, `PATH_MAX`, `strndup`, `strcasecmp`, `asprintf`, `fseeko`/`ftello`,
-`timegm`, `mkstemp`, and `open_memstream` -- the last on a temp file, handing
-the contents back when the stream closes, which is exactly what the one caller
-does.
+## What the Windows port needed
 
-**`ASDF_CONSTRUCTOR`/`ASDF_DESTRUCTOR`** now take the function name and stand
-in for the whole declarator, so one spelling covers
-`__attribute__((constructor))` and MSVC's `.CRT$XCU`. Destructors go through
-`atexit`.
-
-**Two over-broad `#ifdef HAVE_STRPTIME` guards** -- these are latent bugs, not
-Windows ones. The Julian Date constants and then thirteen arithmetic time
-parsers were inside a block guarding code that needs `strptime`, while the
-format dispatch outside called them unconditionally. On any platform without
-`strptime` the file failed to compile, then failed to link. Reproducible on
-Linux by clearing `HAVE_STRPTIME` in `config.h`.
-
-**`-DUSE_STATGRAB=OFF` did nothing** -- also not Windows-specific, and sent
-upstream separately as asdf-format/libasdf#262 / #263.
-
-**Smaller things:** `<sys/types.h>` missing wherever `off_t` is used (13
-files); a Windows branch in `compat/endian.h`; `__builtin_bswap*` →
-`_byteswap_*`; `void *` arithmetic → `char *`; the VLA in `parse_util.c` → a
-fixed array sized by the bound it already had; `UNUSED(x)`, whose non-GCC
-expansion `(void)(x)` is a syntax error in the parameter position it is used
-in; `<sys/time.h>` dropped from `core/time.h` (asdf-format/libasdf#261); and
-libm not linked on Windows, where the CRT carries the math functions.
+- **`src/compat/posix.h`**, standing in for `<unistd.h>` and `<sys/mman.h>`:
+  - `mmap` aligns its view to the **allocation granularity (64 KB)** that
+    `MapViewOfFile` demands, not the 4 KB page size callers align to, and hands
+    back a pointer advanced to the requested offset; `munmap` releases from
+    `AllocationBase`. Before this, any block past the first 4 KB but short of
+    64 KB failed to map.
+  - `timegm`, `gmtime` and `strptime` in plain C: the CRT's `_mkgmtime` and
+    `gmtime` refuse dates before 1970, and there is no `strptime`. Checked
+    against glibc under ASan/UBSan across negative times, years 1 and 9999,
+    field normalisation, and every format `time.c` parses.
+  - `open_memstream`, `strndup`, `asprintf`, `fseeko`/`ftello`, `ssize_t`,
+    `PATH_MAX`, and errno set from `GetLastError`.
+- **Exports**: `ASDF_EXPORT` is `dllexport`/`dllimport` on MSVC, selected by
+  `ASDF_BUILDING_DLL`.
+- **`ASDF_CONSTRUCTOR`/`ASDF_DESTRUCTOR`** take the function name, so one
+  spelling covers `__attribute__((constructor))` and `.CRT$XCU`.
+- **Logs** strip the source root from `__FILE__` at runtime on MSVC, which
+  ignores `-fmacro-prefix-map`.
+- **The temp directory** falls back to `TEMP`/`TMP`, not just `/tmp`.
+- **`.gitattributes`** keeps `tests/fixtures` byte-exact: Git for Windows'
+  default autocrlf rewrote 44 fixtures to CRLF.
+- **Tests**: `tests/compat.h` (dirent, process groups via the parent PID,
+  `fmemopen`, `memmem`, and descriptor helpers); a Python generator for the C++
+  header test in place of a shell script, shared by both build systems; munit
+  given `__PGI`; and `asdf.dll` put on `PATH` for the doc tests.
 
 ## Traps worth remembering
 
-- **Do not macro-define `read`, `write` or `close`.** `asdf_stream` has members
-  of those names, so any macro fires on `stream->close(stream)`. `#define read
-  _read` also rewrote the `read` attribute inside `#pragma section(".CRT$XCU",
-  read)`, which made every constructor fail with C2341 and cost several rounds
-  of misdiagnosis. Named helpers (`asdf_close_fd`) instead.
-- **`/Zc:preprocessor` does not fix STC.** STC compiles under either
-  preprocessor; the hundred `vec.h` errors were an undefined `off_t` reaching
-  `i_type asdf_block_index, off_t`.
-- **`long` is not a valid `#pragma section` attribute.**
-- **Build locally with `-DENABLE_TESTING_ALL=YES`.** Plain `ENABLE_TESTING`
-  builds 22 targets; CI builds 30, and the generated C++ header test is among
-  the eight it adds. A duplicate-symbol regression in it went unnoticed here
-  for exactly that reason.
-- `cmake/ASDFConfig.cmake` adds `-fvisibility=hidden` and
-  `-fmacro-prefix-map=` unconditionally; they reach `cl` as-is and should be
-  guarded.
+- **Never macro-define `read`, `write`, `close` or `open` — in either form.**
+  Object-like, `#define read _read` rewrites the attribute in
+  `#pragma section(".CRT$XCU", read)` and every constructor fails with C2341.
+  Function-like, `read(fd, buf, n)` rewrites `stream->write(stream, …)` in
+  `src/stream.h`. Use named helpers.
+- **`_close` on an already-closed descriptor fast-fails the process**
+  (`0xc0000409`) where POSIX returns `EBADF`. A thread-local invalid-parameter
+  handler turns it back into -1.
+- **`0xc0000409` has two causes** — a `/GS` overrun, or a CRT argument check.
+  Installing an invalid-parameter handler tells them apart: if the fast-fail
+  becomes an abort, it was the argument check.
+- **munit swallows the stderr of a test that aborts**, because it restores the
+  stream only when the test returns. Diagnostics must also write to a file.
+- **munit and `/std:c11`.** munit picks VLA-style array parameters on
+  `__STDC_VERSION__ >= C99`; MSVC claims C11 and has no VLAs. `CMAKE_C_STANDARD`
+  sets the flag on *every* target, so a flag change alone does nothing; `__PGI`
+  is munit's own escape hatch. munit must also not get
+  `/experimental:c11atomics`, or it takes a `<stdatomic.h>` path MSVC rejects.
+- **A missing DLL does not fail fast** on Windows; it raises a loader dialog and
+  waits. That hung five doc tests until the timeout.
+- **Check the macOS jobs, not just Linux.** GCC merely warns on an implicit
+  function declaration; Apple clang rejects it. A dropped `#include
+  <execinfo.h>` kept macOS red for many commits while Linux passed.
+- **Build locally with `-DENABLE_TESTING_ALL=YES`, and run autotools
+  `make check` too.** Plain `ENABLE_TESTING` builds 22 test targets, not 30,
+  and `build.yml` runs the autotools suite.
+- **`/Zc:preprocessor` does not fix STC.** Its hundred `vec.h` errors were an
+  undefined `off_t`.
