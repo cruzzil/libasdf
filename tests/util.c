@@ -139,13 +139,13 @@ static void clean_stale_pgid_files(void) {
  * Returns 1 and sets run_dir_storage on success, 0 otherwise.
  */
 static int join_existing_run(const char *pgid_file) {
-    int fd = open(pgid_file, O_RDONLY);
+    int fd = asdf_test_open(pgid_file, O_RDONLY, 0);
     if (fd < 0)
         return 0;
 
     char serial_str[TEST_SERIAL_LEN + 1] = {0};
-    ssize_t n = read(fd, serial_str, sizeof(serial_str) - 1);
-    close(fd);
+    ssize_t n = (ssize_t)asdf_test_read(fd, serial_str, sizeof(serial_str) - 1);
+    asdf_test_close(fd);
 
     /* A short read means the pioneer has created the coordination file but
      * has not yet finished writing to it; treat it as "not ready". */
@@ -255,9 +255,9 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
 
     /* Reuse the previous run directory if it is still empty. */
     if (try_reuse_latest(serial_str)) {
-        if (write(fd_create, serial_str, strlen(serial_str)) < 0)
+        if (asdf_test_write(fd_create, serial_str, strlen(serial_str)) < 0)
             goto failure;
-        close(fd_create);
+        asdf_test_close(fd_create);
         return;
     }
 
@@ -274,9 +274,9 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
             char serial_buf[32];
             snprintf(serial_buf, sizeof(serial_buf), TEST_SERIAL_FMT, run_num);
             memcpy(serial_str, serial_buf, TEST_SERIAL_LEN + 1);
-            if (write(fd_create, serial_str, strlen(serial_str)) < 0)
+            if (asdf_test_write(fd_create, serial_str, strlen(serial_str)) < 0)
                 goto failure;
-            close(fd_create);
+            asdf_test_close(fd_create);
             char latest[PATH_MAX];
             snprintf(latest, sizeof(latest), TEMP_DIR "/latest");
             unlink(latest);
@@ -291,7 +291,7 @@ static void pioneer_setup(int fd_create, const char *pgid_file) {
 failure:
     /* Failed to create a run directory or write the serial; clean up. */
     run_dir_storage[0] = '\0';
-    close(fd_create);
+    asdf_test_close(fd_create);
     unlink(pgid_file);
 }
 
@@ -313,7 +313,7 @@ ASDF_CONSTRUCTOR(init_run_dir) {
             return;
 
         /* Pioneer: atomically claim the coordination file. */
-        int fd_create = open(pgid_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        int fd_create = asdf_test_open(pgid_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
         if (fd_create >= 0) {
             pioneer_setup(fd_create, pgid_file);
             return;
@@ -355,13 +355,13 @@ const char *get_temp_file_path(const char *prefix, const char *suffix) {
     /* Create the file so it exists (matching the old mkstemp-based behaviour).
      * The run directory should already exist, but recreate it and retry once
      * if something outside the test run removed it. */
-    int fd = open(fullpath, O_CREAT | O_WRONLY, 0600);
+    int fd = asdf_test_open(fullpath, O_CREAT | O_WRONLY, 0600);
     if (fd < 0 && errno == ENOENT) {
         mkdir(get_run_dir(), 0777);
-        fd = open(fullpath, O_CREAT | O_WRONLY, 0600);
+        fd = asdf_test_open(fullpath, O_CREAT | O_WRONLY, 0600);
     }
     if (fd >= 0)
-        close(fd);
+        asdf_test_close(fd);
 
     return fullpath;
 }

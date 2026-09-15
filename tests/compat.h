@@ -18,6 +18,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -33,6 +34,24 @@ static inline int asdf_test_group_alive(int group) {
 }
 
 #define asdf_test_symlink(target, link) symlink((target), (link))
+
+/* Descriptor I/O under names that are safe to use on every platform; see the
+ * Windows branch for why these are not simply read/write/close/open. */
+static inline int asdf_test_open(const char *path, int flags, int mode) {
+    return open(path, flags, mode);
+}
+
+static inline int asdf_test_close(int fd) {
+    return close(fd);
+}
+
+static inline long long asdf_test_read(int fd, void *buf, size_t n) {
+    return (long long)read(fd, buf, n);
+}
+
+static inline long long asdf_test_write(int fd, const void *buf, size_t n) {
+    return (long long)write(fd, buf, n);
+}
 
 #else /* _WIN32 */
 
@@ -303,19 +322,30 @@ static inline void usleep(unsigned int microseconds) {
 #define unlink(path) _unlink(path)
 
 /*
- * Function-like, never object-like. `#define read _read` rewrites *every* read
- * token, including the attribute in asdf/util.h's
- * `#pragma section(".CRT$XCU", read)` -- in any test that includes this header
- * before asdf/util.h, the section was never declared and every
- * ASDF_CONSTRUCTOR failed with C2341. A function-like macro only expands when
- * the name is followed by `(`, which that `read)` is not. The tests never use
- * read/write/close/open as struct members, which is what rules these out in
- * src/compat/posix.h.
+ * Descriptor I/O: named helpers, never macros, for the same reason as
+ * src/compat/posix.h. An object-like `#define read _read` rewrites the `read`
+ * attribute in asdf/util.h's `#pragma section(".CRT$XCU", read)`, so any test
+ * including this header first lost every ASDF_CONSTRUCTOR to C2341. A
+ * function-like `read(fd, buf, n)` avoids that, but then rewrites
+ * `stream->write(stream, buf, count)` in src/stream.h, which the block,
+ * stream, parser, file and compression tests all include. _O_BINARY keeps the
+ * run-directory coordination files free of text-mode translation.
  */
-#define open(...) _open(__VA_ARGS__)
-#define close(fd) _close(fd)
-#define write(fd, buf, n) _write((fd), (buf), (unsigned int)(n))
-#define read(fd, buf, n) _read((fd), (buf), (unsigned int)(n))
+static inline int asdf_test_open(const char *path, int flags, int mode) {
+    return _open(path, flags | _O_BINARY, mode);
+}
+
+static inline int asdf_test_close(int fd) {
+    return _close(fd);
+}
+
+static inline long long asdf_test_read(int fd, void *buf, size_t n) {
+    return _read(fd, buf, (unsigned int)n);
+}
+
+static inline long long asdf_test_write(int fd, const void *buf, size_t n) {
+    return _write(fd, buf, (unsigned int)n);
+}
 
 #endif /* _WIN32 */
 

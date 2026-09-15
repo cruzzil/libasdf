@@ -202,7 +202,7 @@ static int test_compressed_file(
     if (should_own_fd) {
         // The file descriptor for the temp file was closed
         errno = 0;
-        assert_int(close(fd), ==, -1);
+        assert_int(asdf_test_close(fd), ==, -1);
         assert_int(errno, ==, EBADF);
     }
 
