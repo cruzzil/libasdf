@@ -353,5 +353,17 @@ if(ENABLE_TESTING_DOCS)
         # Prepend the build dir libasdf to the library search path
         set_property(TEST ${doctest}
             PROPERTY ENVIRONMENT_MODIFICATION "${runtime}")
+        if (WIN32)
+            # The doc tests are the only ones linking the shared libasdf rather
+            # than its objects, and Windows' loader ignores LD_LIBRARY_PATH: it
+            # searches the executable's directory and PATH. asdf.dll sits in a
+            # per-config directory that is on neither, and a missing DLL does
+            # not fail fast -- it raises a loader dialog and waits, which is
+            # what timed these out. The generator expression resolves that
+            # per-config directory.
+            set_property(TEST ${doctest} APPEND
+                PROPERTY ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:libasdf>")
+        endif()
     endforeach()
 endif()

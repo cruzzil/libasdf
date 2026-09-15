@@ -275,6 +275,17 @@ jobs:
         Get-Content ctest.log -Tail 45
         Pop-Location
 
+    # The step output is a tail; the per-test detail is what diagnosis needs.
+    - name: Upload test logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-test-logs
+        path: |
+          build/ctest.log
+          build/Testing/Temporary/LastTest.log
+        if-no-files-found: warn
+
     - name: Smoke test the DLL
       shell: pwsh
       continue-on-error: true
