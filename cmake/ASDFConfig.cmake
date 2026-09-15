@@ -5,7 +5,12 @@ include(CheckSymbolExists)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
 
-add_compile_options(-fvisibility=hidden)
+if(NOT MSVC)
+    # Symbols are hidden by default and exported explicitly. MSVC has no such
+    # flag -- it exports nothing unless marked, which ASDF_EXPORT does -- and
+    # warns D9002 on every translation unit if given this one.
+    add_compile_options(-fvisibility=hidden)
+endif()
 
 if(ASDF_DEBUG)
     add_compile_definitions(DEBUG)

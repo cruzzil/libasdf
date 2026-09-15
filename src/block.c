@@ -739,6 +739,19 @@ const void *asdf_block_data_impl(asdf_block_t *block, size_t *size, bool decompr
     size_t avail = 0;
     void *data = stream->open_mem(
         stream, block->info.data_pos, block->info.header.used_size, &avail);
+
+    /*
+     * The stream has already reported why (a failed map, a short read). Going
+     * on would hand NULL to the decompressor below, which dereferences it --
+     * a failure to read one block became a crash of the whole process.
+     */
+    if (UNLIKELY(!data)) {
+        if (size)
+            *size = 0;
+
+        return NULL;
+    }
+
     block->data = data;
     block->should_close = true;
     block->avail_size = avail;

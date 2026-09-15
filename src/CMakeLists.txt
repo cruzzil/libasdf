@@ -114,9 +114,17 @@ list(REMOVE_DUPLICATES all_cflags)
 target_compile_options(libasdf_objs PUBLIC ${all_cflags})
 
 # Make __FILE__ names relative to source root
-target_compile_options(libasdf_objs PRIVATE
-    -fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=
-)
+if(MSVC)
+    # cl has no -fmacro-prefix-map (it warns D9002 and ignores it), so __FILE__
+    # stays absolute; log.c strips this prefix at runtime instead.
+    target_compile_definitions(libasdf_objs PRIVATE
+        ASDF_SOURCE_PREFIX="${CMAKE_SOURCE_DIR}/"
+    )
+else()
+    target_compile_options(libasdf_objs PRIVATE
+        -fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=
+    )
+endif()
 
 # Avoid generating "liblibasdf"
 set_target_properties(libasdf ${PROJECT_NAME} PROPERTIES

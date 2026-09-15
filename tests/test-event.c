@@ -496,7 +496,9 @@ MU_TEST(basic_buffer_yaml) {
 MU_TEST(test_asdf_event_summary) {
     const char *filename = get_reference_file_path("1.6.0/basic.asdf");
     const char *log_file = get_temp_file_path(fixture->tempfile_prefix, ".log");
-    FILE *log_stream = fopen(log_file, "w");
+    /* Binary: the log is compared byte for byte, and a text-mode stream on
+     * Windows writes every newline as CRLF. */
+    FILE *log_stream = fopen(log_file, "wb");
     assert_not_null(log_stream);
     asdf_log_cfg_t log_config = {
         .level = ASDF_LOG_TRACE, .fields = ASDF_LOG_FIELD_ALL ^ ASDF_LOG_FIELD_LINE,

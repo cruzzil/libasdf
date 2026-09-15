@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +66,49 @@ asdf_log_level_t asdf_log_level_from_env() {
 }
 
 
+
+/*
+ * The source file as it should appear in a log line: relative to the source
+ * root, with forward slashes.
+ *
+ * GCC and Clang get that at compile time from -fmacro-prefix-map. MSVC has no
+ * equivalent, so its __FILE__ is absolute and backslashed --
+ * D:\\a\\libasdf\\libasdf\\src\\parser.c where the others say src/parser.c --
+ * and the build passes the root as ASDF_SOURCE_PREFIX for this to strip. The
+ * comparison treats / and \\ alike and ignores case, because CMake reports
+ * the root with forward slashes and the drive letter's case is not fixed.
+ * A file outside the root, such as a caller's own ASDF_LOG, keeps its full
+ * path.
+ */
+static const char *asdf_log_display_file(const char *file, char *buf, size_t buf_size) {
+    if (!file)
+        return "";
+
+#ifdef ASDF_SOURCE_PREFIX
+    const char *prefix = ASDF_SOURCE_PREFIX;
+    const char *f = file;
+
+    for (; *prefix && *f; prefix++, f++) {
+        char a = (char)tolower((unsigned char)(*prefix == '\\' ? '/' : *prefix));
+        char b = (char)tolower((unsigned char)(*f == '\\' ? '/' : *f));
+
+        if (a != b)
+            break;
+    }
+
+    if (!*prefix)
+        file = f;
+#endif
+
+    size_t idx = 0;
+
+    for (; file[idx] && idx + 1 < buf_size; idx++)
+        buf[idx] = file[idx] == '\\' ? '/' : file[idx];
+
+    buf[idx] = '\0';
+    return buf;
+}
+
 static void asdf_log_impl(
     FILE *stream,
     asdf_log_level_t level,
@@ -77,6 +121,7 @@ static void asdf_log_impl(
     // Don't allow logging "nothing" (logging should simply be disabled for
     // that); if fields is empty enable all fields
     fields = fields ? fields : ASDF_LOG_FIELD_ALL;
+    char file_buf[512];
 #ifdef ASDF_LOG_COLOR
     if (!no_color) {
         if (fields & ASDF_LOG_FIELD_LEVEL)
@@ -90,7 +135,7 @@ static void asdf_log_impl(
             fputs(COLOR(COLOR_DIM_GREY, "(" PACKAGE_NAME ")"), stream);
 
         if (fields & ASDF_LOG_FIELD_FILE)
-            fprintf(stream, COLOR(COLOR_DIM_GREY, "%s:"), file);
+            fprintf(stream, COLOR(COLOR_DIM_GREY, "%s:"), asdf_log_display_file(file, file_buf, sizeof(file_buf)));
 
         if (fields & ASDF_LOG_FIELD_LINE)
             fprintf(stream, COLOR(COLOR_DIM_GREY, "%d:"), lineno);
@@ -113,7 +158,7 @@ static void asdf_log_impl(
         fputs("(" PACKAGE_NAME ")", stream);
 
     if (fields & ASDF_LOG_FIELD_FILE)
-        fprintf(stream, "%s:", file);
+        fprintf(stream, "%s:", asdf_log_display_file(file, file_buf, sizeof(file_buf)));
 
     if (fields & ASDF_LOG_FIELD_LINE)
         fprintf(stream, "%d:", lineno);

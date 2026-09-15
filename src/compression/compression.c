@@ -68,6 +68,15 @@ static int asdf_create_temp_file(size_t data_size, const char *tmp_dir, int *out
     if (!tmp_dir) {
         const char *tmp = getenv("ASDF_TMPDIR");
         tmp = (tmp && tmp[0]) ? tmp : getenv("TMPDIR");
+#if defined(_WIN32)
+        /*
+         * Windows sets TEMP/TMP, not TMPDIR, and has no /tmp. Without these the
+         * path was /tmp/libasdf-block-XXXXXX, the open failed, and the caller
+         * reported it as running out of memory.
+         */
+        tmp = (tmp && tmp[0]) ? tmp : getenv("TEMP");
+        tmp = (tmp && tmp[0]) ? tmp : getenv("TMP");
+#endif
         tmp_dir = (tmp && tmp[0]) ? tmp : "/tmp";
     }
 
