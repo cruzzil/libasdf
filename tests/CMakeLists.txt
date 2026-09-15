@@ -54,6 +54,9 @@ function(asdf_test_msvc_flags target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /std:c11 /experimental:c11atomics)
         target_compile_definitions(${target} PRIVATE __PGI)
+        # tests/munit.h symbolises a stack through DbgHelp when the CRT hits an
+        # invalid parameter; see the handler there.
+        target_link_libraries(${target} PRIVATE dbghelp)
     endif()
 endfunction()
 

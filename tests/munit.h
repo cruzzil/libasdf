@@ -55,6 +55,71 @@ static int orig_stderr;
  * SymFromAddr, which is a different piece of work. Without it a crash still
  * fails the test, just with no stack.
  */
+#if defined(_WIN32)
+/*
+ * Windows has no execinfo.h, and its CRT does not raise a signal for a bad
+ * argument: it calls the invalid-parameter handler and then fast-fails with
+ * 0xc0000409, which bypasses every exception handler and leaves nothing to go
+ * on. Install a handler that prints a symbolised stack first. If a test dies
+ * with 0xc0000409 *without* this output, the cause was a genuine /GS stack
+ * cookie overrun instead.
+ */
+#include <windows.h>
+#include <dbghelp.h>
+
+static void mu_win32_invalid_parameter(
+    const wchar_t *expression,
+    const wchar_t *function,
+    const wchar_t *src,
+    unsigned int line,
+    uintptr_t reserved) {
+    (void)expression;
+    (void)function;
+    (void)src;
+    (void)line;
+    (void)reserved;
+
+    fprintf(stderr, "\n*** CRT invalid parameter; stack:\n");
+
+    HANDLE process = GetCurrentProcess();
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+    SymInitialize(process, NULL, TRUE);
+
+    void *frames[62];
+    USHORT n = CaptureStackBackTrace(0, 62, frames, NULL);
+
+    char symbol_buf[sizeof(SYMBOL_INFO) + 256];
+    SYMBOL_INFO *symbol = (SYMBOL_INFO *)symbol_buf;
+
+    for (USHORT idx = 0; idx < n; idx++) {
+        memset(symbol_buf, 0, sizeof(symbol_buf));
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol->MaxNameLen = 255;
+        DWORD64 addr = (DWORD64)(uintptr_t)frames[idx];
+        IMAGEHLP_LINE64 where = {0};
+        where.SizeOfStruct = sizeof(where);
+        DWORD disp = 0;
+
+        const char *name = SymFromAddr(process, addr, NULL, symbol) ? symbol->Name : "?";
+
+        if (SymGetLineFromAddr64(process, addr, &disp, &where))
+            fprintf(stderr, "  #%u %s (%s:%lu)\n", idx, name, where.FileName, where.LineNumber);
+        else
+            fprintf(stderr, "  #%u %s\n", idx, name);
+    }
+
+    fflush(stderr);
+    abort();
+}
+
+ASDF_CONSTRUCTOR(mu_win32_install_diagnostics) {
+    _set_invalid_parameter_handler(mu_win32_invalid_parameter);
+    /* Report CRT assertions to stderr instead of a dialog nobody can click. */
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+}
+#endif
+
+
 #if defined(ASDF_HAVE_EXECINFO)
 /* Declares backtrace() and backtrace_symbols_fd(). Dropping this when the
  * handler moved behind the probe broke macOS: its clang rejects the implicit
