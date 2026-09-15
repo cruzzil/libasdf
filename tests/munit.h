@@ -56,6 +56,11 @@ static int orig_stderr;
  * fails the test, just with no stack.
  */
 #if defined(ASDF_HAVE_EXECINFO)
+/* Declares backtrace() and backtrace_symbols_fd(). Dropping this when the
+ * handler moved behind the probe broke macOS: its clang rejects the implicit
+ * declarations that GCC only warns about. */
+#include <execinfo.h>
+
 static void crash_handler(int sig) {
     void *bt[64];
     int n = write(orig_stderr, "\n", 1);
