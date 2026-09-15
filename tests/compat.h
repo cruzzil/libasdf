@@ -301,10 +301,21 @@ static inline void usleep(unsigned int microseconds) {
 }
 
 #define unlink(path) _unlink(path)
-#define open _open
-#define close _close
-#define write _write
-#define read _read
+
+/*
+ * Function-like, never object-like. `#define read _read` rewrites *every* read
+ * token, including the attribute in asdf/util.h's
+ * `#pragma section(".CRT$XCU", read)` -- in any test that includes this header
+ * before asdf/util.h, the section was never declared and every
+ * ASDF_CONSTRUCTOR failed with C2341. A function-like macro only expands when
+ * the name is followed by `(`, which that `read)` is not. The tests never use
+ * read/write/close/open as struct members, which is what rules these out in
+ * src/compat/posix.h.
+ */
+#define open(...) _open(__VA_ARGS__)
+#define close(fd) _close(fd)
+#define write(fd, buf, n) _write((fd), (buf), (unsigned int)(n))
+#define read(fd, buf, n) _read((fd), (buf), (unsigned int)(n))
 
 #endif /* _WIN32 */
 
