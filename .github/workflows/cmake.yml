@@ -157,6 +157,80 @@ jobs:
         fi
         cat "$logfile"
 
+  # MSVC. PowerShell rather than Git Bash, which rewrites POSIX paths on the way
+  # to native programs. The command-line tool is not built: it needs argp.
+  windows:
+    name: 'Windows (MSVC)'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        submodules: true
+
+    - name: Install dependencies
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        vcpkg install zlib bzip2 lz4 pkgconf --triplet x64-windows
+        $pkgconf = Get-ChildItem -Recurse "$env:VCPKG_INSTALLATION_ROOT\installed" `
+            -Filter 'pkgconf.exe' | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $pkgconf) { throw 'pkgconf.exe not found' }
+        "ASDF_PKG_CONFIG=$pkgconf" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
+
+    # libfyaml has no Windows package, but builds with MSVC.
+    - name: Build libfyaml
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        git clone --depth 1 https://github.com/pantoniou/libfyaml.git third_party/libfyaml
+        cmake -S third_party/libfyaml -B third_party/libfyaml/build `
+          -DCMAKE_INSTALL_PREFIX="$PWD\third_party\libfyaml\install" `
+          -DBUILD_SHARED_LIBS=OFF
+        cmake --build third_party/libfyaml/build --config $env:BUILD_TYPE
+        cmake --install third_party/libfyaml/build --config $env:BUILD_TYPE
+
+    # /Zc:preprocessor is required: asdf_open and asdf_write_to dispatch on a
+    # __VA_ARGS__ argument count, which MSVC's traditional preprocessor miscounts.
+    - name: Configure
+      shell: pwsh
+      run: |
+        $fy = "$PWD\third_party\libfyaml\install"
+        $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+        $env:PKG_CONFIG_PATH = "$vcpkg\installed\x64-windows\lib\pkgconfig"
+        cmake -S . -B build `
+          -DCMAKE_TOOLCHAIN_FILE="$vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          -DPKG_CONFIG_EXECUTABLE="$env:ASDF_PKG_CONFIG" `
+          -DUSE_STATGRAB=OFF `
+          -DFYAML_NO_PKGCONFIG=YES `
+          -DFYAML_INCLUDEDIR="$fy\include" `
+          -DFYAML_LIBDIR="$fy\lib" `
+          -DCMAKE_C_FLAGS="/Zc:preprocessor" `
+          -DENABLE_TESTING_ALL=YES
+
+    - name: Build
+      shell: pwsh
+      run: cmake --build build --config $env:BUILD_TYPE
+
+    # A crashing test otherwise opens an error-reporting dialog and waits.
+    - name: Disable crash dialogs
+      shell: pwsh
+      run: |
+        $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting'
+        New-ItemProperty -Path $k -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
+
+    - name: Test
+      shell: pwsh
+      working-directory: build
+      timeout-minutes: 10
+      run: |
+        $env:PATH = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin;$env:PATH"
+        ctest -C $env:BUILD_TYPE --timeout 60 --output-on-failure
+
   # Test the documentation build if the build passes
   docs:
     name: 'Build documentation'
