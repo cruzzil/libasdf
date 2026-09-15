@@ -19,7 +19,7 @@ asdf_yaml_common_tag_t asdf_common_tag_get(const char *tagstr) {
 }
 
 
-ASDF_CONSTRUCTOR static void asdf_common_tag_map_create() {
+ASDF_CONSTRUCTOR(asdf_common_tag_map_create) {
     if (atomic_load_explicit(&tag_map_initialized, memory_order_acquire))
         return;
 
@@ -34,7 +34,7 @@ ASDF_CONSTRUCTOR static void asdf_common_tag_map_create() {
 }
 
 
-ASDF_DESTRUCTOR static void asdf_common_tag_map_destroy(void) {
+ASDF_DESTRUCTOR(asdf_common_tag_map_destroy) {
     if (atomic_load_explicit(&tag_map_initialized, memory_order_acquire)) {
         asdf_common_tag_map_drop(&tag_map);
         atomic_store_explicit(&tag_map_initialized, false, memory_order_release);

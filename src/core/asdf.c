@@ -450,7 +450,7 @@ ASDF_REGISTER_EXTENSION(
 // clang-format on
 
 
-ASDF_CONSTRUCTOR static void asdf_libasdf_version_init() {
+ASDF_CONSTRUCTOR(asdf_libasdf_version_init) {
     asdf_version_t *version = asdf_version_parse(PACKAGE_VERSION);
     libasdf_version.version = version->version;
     libasdf_version.major = version->major;
@@ -461,7 +461,7 @@ ASDF_CONSTRUCTOR static void asdf_libasdf_version_init() {
 }
 
 
-ASDF_DESTRUCTOR static void asdf_libasdf_version_destroy() {
+ASDF_DESTRUCTOR(asdf_libasdf_version_destroy) {
     free((void *)libasdf_version.version);
     free((void *)libasdf_version.extra);
 }

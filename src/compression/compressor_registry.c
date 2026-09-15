@@ -38,7 +38,7 @@ const asdf_compressor_t *asdf_compressor_get(asdf_file_t *file, const char *comp
  * TODO: These initializers/destructors for global mappings are repeated in a few places; could
  * easily generalize...
  */
-ASDF_CONSTRUCTOR static void asdf_compressor_map_create() {
+ASDF_CONSTRUCTOR(asdf_compressor_map_create) {
     if (atomic_load_explicit(&compressor_map_initialized, memory_order_acquire))
         return;
 
@@ -47,7 +47,7 @@ ASDF_CONSTRUCTOR static void asdf_compressor_map_create() {
 }
 
 
-ASDF_DESTRUCTOR static void asdf_compressor_map_destroy(void) {
+ASDF_DESTRUCTOR(asdf_compressor_map_destroy) {
     if (atomic_load_explicit(&compressor_map_initialized, memory_order_acquire)) {
         asdf_compressor_map_drop(&compressor_map);
         atomic_store_explicit(&compressor_map_initialized, false, memory_order_release);

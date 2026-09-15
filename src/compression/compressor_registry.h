@@ -35,7 +35,7 @@ ASDF_LOCAL const asdf_compressor_t *asdf_compressor_get(asdf_file_t *file, const
  */
 #define ASDF_REGISTER_COMPRESSOR(compression, init, destroy, info, comp, decomp) \
     ASDF_COMPRESSOR_DEFINE(compression, init, destroy, info, comp, decomp); \
-    static ASDF_CONSTRUCTOR void ASDF_EXPAND( \
-        ASDF_PREFIX, _register_##compression##_extension)(void) { \
+    ASDF_CONSTRUCTOR(ASDF_EXPAND( \
+        ASDF_PREFIX, _register_##compression##_extension)) { \
         asdf_compressor_register(&ASDF_COMPRESSOR_STATIC_NAME(compression)); \
     }

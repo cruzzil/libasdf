@@ -7,6 +7,7 @@
 #pragma once
 
 #define i_type asdf_block_index, off_t
+#include <sys/types.h>
 #include <stc/vec.h>
 
 typedef asdf_block_index asdf_block_index_t;

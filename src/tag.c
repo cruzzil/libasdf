@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compat/posix.h"
+
 #include "asdf/version.h"
 #include "tag.h"
 #include "util.h"

@@ -33,13 +33,25 @@ typedef enum {
 } asdf_emitter_state_t;
 
 
+/*
+ * The default tag handles, as a named array rather than a compound literal
+ * inside the macro below.
+ *
+ * A compound literal is not a constant expression, so using one to initialise
+ * an object with static storage duration is a GNU extension; MSVC rejects it
+ * outright.  The address of this array is an address constant, which is not.
+ */
+extern const asdf_yaml_tag_handle_t asdf_emitter_default_tag_handles[];
+
+/*
+ * A braced initialiser list, not a compound literal: this is only ever used
+ * to initialise an object, so it needs no type of its own, and dropping the
+ * cast is what makes it valid at file scope.
+ */
 #define ASDF_EMITTER_CFG_DEFAULT \
-    (asdf_emitter_cfg_t) { \
-        .flags = ASDF_EMITTER_OPT_DEFAULT, .tag_handles = (asdf_yaml_tag_handle_t[]) { \
-            {ASDF_YAML_DEFAULT_TAG_HANDLE, ASDF_STANDARD_TAG_PREFIX}, { \
-                NULL, NULL \
-            } \
-        } \
+    { \
+        .flags = ASDF_EMITTER_OPT_DEFAULT, \
+        .tag_handles = (asdf_yaml_tag_handle_t *)asdf_emitter_default_tag_handles \
     }
 
 

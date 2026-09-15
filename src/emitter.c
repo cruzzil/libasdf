@@ -6,6 +6,8 @@
 
 #include <libfyaml.h>
 
+#include "compat/posix.h"
+
 #include "compression/compression.h"
 #include "context.h"
 #include "emitter.h"
@@ -20,6 +22,12 @@
 /**
  * Default libasdf emitter configuration
  */
+const asdf_yaml_tag_handle_t asdf_emitter_default_tag_handles[] = {
+    {ASDF_YAML_DEFAULT_TAG_HANDLE, ASDF_STANDARD_TAG_PREFIX},
+    {NULL, NULL},
+};
+
+
 static const asdf_emitter_cfg_t asdf_emitter_cfg_default = ASDF_EMITTER_CFG_DEFAULT;
 
 

@@ -64,7 +64,7 @@ void asdf_context_release(asdf_context_t *ctx) {
 }
 
 
-ASDF_CONSTRUCTOR static void asdf_global_context_create() {
+ASDF_CONSTRUCTOR(asdf_global_context_create) {
     if (atomic_load_explicit(&global_ctx_initialized, memory_order_acquire))
         return;
 
@@ -84,7 +84,7 @@ ASDF_CONSTRUCTOR static void asdf_global_context_create() {
 }
 
 
-ASDF_DESTRUCTOR static void asdf_global_context_destroy(void) {
+ASDF_DESTRUCTOR(asdf_global_context_destroy) {
     if (atomic_load_explicit(&global_ctx_initialized, memory_order_acquire)) {
         asdf_context_release(global_ctx.base.ctx);
         atomic_store_explicit(&global_ctx_initialized, false, memory_order_release);

@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include <sys/types.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

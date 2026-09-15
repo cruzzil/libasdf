@@ -1,3 +1,4 @@
+#include <sys/types.h>
 #include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -6,7 +7,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
+
+#include "compat/posix.h"
 
 #include "asdf/version.h"
 

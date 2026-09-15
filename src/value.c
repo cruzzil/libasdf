@@ -1,4 +1,5 @@
 #ifdef HAVE_CONFIG_H
+#include <sys/types.h>
 #include "config.h"
 #endif
 
@@ -14,6 +15,8 @@
 #include <string.h>
 
 #include <libfyaml.h>
+
+#include "compat/posix.h"
 
 #include "error.h"
 #include "file.h"

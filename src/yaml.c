@@ -1,6 +1,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+#include <sys/types.h>
 #include <assert.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -8,6 +9,8 @@
 #include <string.h>
 
 #include <libfyaml.h>
+
+#include "compat/posix.h"
 
 #include "event.h"
 #include "file.h"

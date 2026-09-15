@@ -18,16 +18,28 @@
 #include "ndarray.h"
 #include "ndarray_convert.h"
 
+/* MSVC has no __builtin_bswap; the CRT spells them _byteswap_*. */
+#if defined(_MSC_VER)
+#include <stdlib.h>
+#define ASDF_BSWAP16(x) _byteswap_ushort(x)
+#define ASDF_BSWAP32(x) _byteswap_ulong(x)
+#define ASDF_BSWAP64(x) _byteswap_uint64(x)
+#else
+#define ASDF_BSWAP16(x) __builtin_bswap16(x)
+#define ASDF_BSWAP32(x) __builtin_bswap32(x)
+#define ASDF_BSWAP64(x) __builtin_bswap64(x)
+#endif
+
 
 // NOLINTBEGIN(readability-identifier-length)
 static inline uint16_t bswap_uint16_t(uint16_t x) {
-    return __builtin_bswap16(x);
+    return ASDF_BSWAP16(x);
 }
 static inline uint32_t bswap_uint32_t(uint32_t x) {
-    return __builtin_bswap32(x);
+    return ASDF_BSWAP32(x);
 }
 static inline uint64_t bswap_uint64_t(uint64_t x) {
-    return __builtin_bswap64(x);
+    return ASDF_BSWAP64(x);
 }
 
 #ifdef HAVE_FLOAT16
@@ -581,7 +593,7 @@ DEFINE_CLAMP_CONVERSION(float64, double, uint64, uint64_t, 0, UINT64_MAX)
     FOR_NUMERIC_TYPES_EXPAND(REGISTER_CONVERSION_FOR_PAIR, src_enum, src_name)
 
 
-ASDF_CONSTRUCTOR static void asdf_conversion_table_init() {
+ASDF_CONSTRUCTOR(asdf_conversion_table_init) {
     if (atomic_load_explicit(&conversion_table_initialized, memory_order_acquire))
         return;
 

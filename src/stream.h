@@ -8,9 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
-#include <unistd.h>
 
 #include <libfyaml.h>
+
+#include "compat/posix.h"
 
 #include "context.h"
 #include "log.h"

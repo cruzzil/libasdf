@@ -8,6 +8,8 @@
 #include <string.h>
 #include <time.h>
 
+#include "../compat/posix.h"
+
 #include "stc/cregex.h"
 
 #include "./asdf.h"
@@ -102,7 +104,7 @@ static void compile_time_auto_regexes(void) {
 }
 
 
-ASDF_DESTRUCTOR static void drop_time_auto_regexes(void) {
+ASDF_DESTRUCTOR(drop_time_auto_regexes) {
     if (atomic_load_explicit(&time_auto_regexes_compiled, memory_order_acquire)) {
         for (size_t jdx = 0; jdx < TIME_AUTO_COUNT; jdx++) {
             if (time_auto_regexes[jdx].prog)

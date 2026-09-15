@@ -5,7 +5,12 @@ include(CheckSymbolExists)
 include(CheckFunctionExists)
 include(CheckIncludeFile)
 
-add_compile_options(-fvisibility=hidden)
+if(NOT MSVC)
+    # Symbols are hidden by default and exported explicitly. MSVC has no such
+    # flag -- it exports nothing unless marked, which ASDF_EXPORT does -- and
+    # warns D9002 on every translation unit if given this one.
+    add_compile_options(-fvisibility=hidden)
+endif()
 
 if(ASDF_DEBUG)
     add_compile_definitions(DEBUG)
@@ -60,6 +65,12 @@ check_endian_decl(htole32)
 
 
 check_function_exists(strptime HAVE_STRPTIME)
+if(WIN32)
+    # The CRT has no strptime; src/compat/posix.h supplies one covering the
+    # formats time.c parses. Without it every string time silently comes back
+    # as year 1900 with a zero timestamp.
+    set(HAVE_STRPTIME 1)
+endif()
 
 
 # Check for usable _Float16 for datatype support
