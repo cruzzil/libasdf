@@ -1920,6 +1920,79 @@ MU_TEST(test_asdf_value_find_iter_max_depth) {
 }
 
 
+static size_t value_find_count(asdf_file_t *file, bool depth_first) {
+    asdf_value_t *root = asdf_get_value(file, "/");
+    assert_not_null(root);
+    asdf_find_iter_t *iter = asdf_find_iter_init_ex(
+        root, NULL, depth_first, asdf_find_descend_all, -1);
+    size_t count = 0;
+
+    while (asdf_value_find_iter_next(&iter))
+        count++;
+
+    asdf_value_destroy(root);
+    return count;
+}
+
+
+/** An alias to an ancestor must not be descended into forever */
+MU_TEST(test_asdf_value_find_alias_cycle) {
+    const char yaml[] =
+        "#ASDF 1.0.0\n"
+        "#ASDF_STANDARD 1.6.0\n"
+        "%YAML 1.1\n"
+        "%TAG ! tag:stsci.edu:asdf/\n"
+        "--- !core/asdf-1.1.0\n"
+        "a: &a\n"
+        "  b: *a\n"
+        "  c: a\n"
+        "...\n";
+    asdf_file_t *file = asdf_open_mem(yaml, sizeof(yaml) - 1);
+    assert_not_null(file);
+
+    // The root, /a, /a/b (yielded but not descended into) and /a/c
+    assert_size(value_find_count(file, true), ==, 4);
+    assert_size(value_find_count(file, false), ==, 4);
+
+    asdf_value_t *val = asdf_find_ex(file, value_find_pred_b, true, asdf_find_descend_all, -1);
+    assert_null(val);
+
+    asdf_close(file);
+    return MUNIT_OK;
+}
+
+
+/** Nested aliases must not be expanded exponentially */
+MU_TEST(test_asdf_value_find_alias_expansion) {
+    const char yaml[] =
+        "#ASDF 1.0.0\n"
+        "#ASDF_STANDARD 1.6.0\n"
+        "%YAML 1.1\n"
+        "%TAG ! tag:stsci.edu:asdf/\n"
+        "--- !core/asdf-1.1.0\n"
+        "a: &a [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]\n"
+        "b: &b [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a]\n"
+        "c: &c [*b, *b, *b, *b, *b, *b, *b, *b, *b, *b]\n"
+        "d: &d [*c, *c, *c, *c, *c, *c, *c, *c, *c, *c]\n"
+        "e: &e [*d, *d, *d, *d, *d, *d, *d, *d, *d, *d]\n"
+        "f: &f [*e, *e, *e, *e, *e, *e, *e, *e, *e, *e]\n"
+        "g: &g [*f, *f, *f, *f, *f, *f, *f, *f, *f, *f]\n"
+        "h: &h [*g, *g, *g, *g, *g, *g, *g, *g, *g, *g]\n"
+        "i: &i [*h, *h, *h, *h, *h, *h, *h, *h, *h, *h]\n"
+        "j: &j [*i, *i, *i, *i, *i, *i, *i, *i, *i, *i]\n"
+        "...\n";
+    asdf_file_t *file = asdf_open_mem(yaml, sizeof(yaml) - 1);
+    assert_not_null(file);
+
+    // The root, its 10 sequences, the 10 integers in /a and the 90 aliases
+    assert_size(value_find_count(file, true), ==, 111);
+    assert_size(value_find_count(file, false), ==, 111);
+
+    asdf_close(file);
+    return MUNIT_OK;
+}
+
+
 MU_TEST(test_asdf_value_find_ex) {
     const char *filename = get_fixture_file_path("nested.asdf");
     asdf_file_t *file = asdf_open(filename, "r");
@@ -2466,6 +2539,8 @@ MU_TEST_SUITE(
     MU_RUN_TEST(test_asdf_value_find_iter_ex_descend_mapping_only),
     MU_RUN_TEST(test_asdf_value_find_iter_ex_descend_sequence_only),
     MU_RUN_TEST(test_asdf_value_find_iter_max_depth),
+    MU_RUN_TEST(test_asdf_value_find_alias_cycle),
+    MU_RUN_TEST(test_asdf_value_find_alias_expansion),
     MU_RUN_TEST(test_asdf_value_find_ex),
     MU_RUN_TEST(test_asdf_value_find_iter),
     MU_RUN_TEST(test_asdf_value_find),

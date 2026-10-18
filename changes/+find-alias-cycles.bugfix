@@ -1,0 +1,4 @@
+Fixed ``asdf_value_find`` and the find iterator looping forever on a YAML alias
+to one of its own ancestors, and taking exponential time on nested aliases.
+Each container is now descended into at most once; a container reached again
+through an alias is still returned as a candidate.
