@@ -96,6 +96,12 @@ typedef struct asdf_find_frame {
 } asdf_find_frame_t;
 
 
+// NOLINTNEXTLINE(readability-identifier-naming)
+#define i_type asdf_find_node_set
+#define i_key const struct fy_node *
+#include "stc/hset.h"
+
+
 typedef struct asdf_find_iter_impl {
     /** Must first member -- cast to/from asdf_find_iter_t * is valid */
     asdf_find_iter_t pub;
@@ -106,6 +112,8 @@ typedef struct asdf_find_iter_impl {
     asdf_find_frame_t *frames;
     size_t frame_count;
     size_t frame_cap;
+    /** Every container descended into; aliases can lead back to one */
+    asdf_find_node_set visited;
 } asdf_find_iter_impl_t;
 
 

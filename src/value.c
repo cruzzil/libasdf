@@ -2863,6 +2863,7 @@ static asdf_find_iter_impl_t *asdf_find_iter_create(
     impl->depth_first = depth_first;
     impl->descend_pred = descend_pred;
     impl->max_depth = max_depth;
+    impl->visited = asdf_find_node_set_init();
     // Initial small frame stack; use max_depth as a heuristic when available
     impl->frame_cap = (max_depth < 0) ? ASDF_VALUE_FIND_ITER_MIN_CAPACITY
                                       : (((max_depth > ASDF_VALUE_FIND_ITER_MAX_DEPTH)
@@ -2871,6 +2872,7 @@ static asdf_find_iter_impl_t *asdf_find_iter_create(
     impl->frames = calloc(impl->frame_cap, sizeof(asdf_find_frame_t));
 
     if (!impl->frames) {
+        asdf_find_node_set_drop(&impl->visited);
         free(impl);
         return NULL;
     }
@@ -2891,6 +2893,11 @@ static inline asdf_find_frame_t *asdf_find_iter_push_frame(
         (iter->frame_count > 0 && iter->descend_pred && !iter->descend_pred(container)))
         return NULL;
 
+    // Descend into each container once: an alias to an ancestor would loop
+    // forever, and nested aliases can expand the tree exponentially
+    if (asdf_find_node_set_contains(&iter->visited, container->node))
+        return NULL;
+
     if (iter->frame_count == iter->frame_cap) {
         size_t new_frame_cap = iter->frame_cap * 2;
         asdf_find_frame_t *new_frames = realloc(
@@ -2905,6 +2912,7 @@ static inline asdf_find_frame_t *asdf_find_iter_push_frame(
         iter->frame_cap = new_frame_cap;
     }
 
+    asdf_find_node_set_insert(&iter->visited, container->node);
     asdf_find_frame_t *frame = &iter->frames[iter->frame_count++];
     ZERO_MEMORY(frame, sizeof(asdf_find_frame_t));
     frame->container = container;
@@ -2957,6 +2965,10 @@ static asdf_value_t *asdf_find_iter_next_dfs(asdf_find_iter_impl_t *iter) {
     while (asdf_container_iter_next(&frame->iter)) {
         asdf_value_t *child = frame->iter->value;
         if (asdf_value_is_container(child)) {
+            // A container already descended into is still a match candidate
+            if (asdf_find_node_set_contains(&iter->visited, child->node))
+                return child;
+
             asdf_find_iter_push_frame(iter, child, frame->depth + 1);
             return NULL;
         }
@@ -2980,7 +2992,8 @@ static asdf_value_t *asdf_find_iter_next_bfs(asdf_find_iter_impl_t *iter) {
 
     while (asdf_container_iter_next(&frame->iter)) {
         asdf_value_t *child = frame->iter->value;
-        if (asdf_value_is_container(child)) {
+        if (asdf_value_is_container(child) &&
+            !asdf_find_node_set_contains(&iter->visited, child->node)) {
             // In BFS, copy the child before pushing: the next container_iter_next
             // call will destroy the original value wrapper.
             asdf_find_frame_t *new_frame = asdf_find_iter_push_frame(
@@ -3049,6 +3062,7 @@ void asdf_find_iter_destroy(asdf_find_iter_t *iter) {
     while (impl->frame_count > 0)
         asdf_find_iter_pop_frame(impl, impl->frame_count - 1);
 
+    asdf_find_node_set_drop(&impl->visited);
     free(impl->frames);
     free(impl);
 }
